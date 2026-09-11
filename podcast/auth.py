@@ -58,19 +58,32 @@ def has_password() -> bool:
 def set_password(plain: str):
     data = state.load()
     data["admin_password"] = hash_password(plain)
+    data.pop("initial_password", None)     # vlastní heslo → vygenerované zmizí i z výpisu
     state.save(data)
 
 
+def initial_password() -> str:
+    """Vygenerované heslo, dokud si člověk nenastavil vlastní. Prázdné = už je vlastní."""
+    return state.load().get("initial_password", "")
+
+
 def bootstrap() -> str:
-    """Zajistí, že heslo existuje. Vrátí nově vyrobené (k vypsání do logu), nebo ""."""
+    """Zajistí, že heslo existuje, a vrátí vygenerované, dokud se nezmění na vlastní.
+
+    Schválně se vrací při každém startu, ne jen při prvním: kdyby se ten jediný
+    výpis ztratil (jiný způsob spuštění, otočený log), nedalo by se do administrace
+    dostat vůbec. Jakmile si heslo změníš, přestane se ukazovat."""
     if has_password():
-        return ""
+        return initial_password()
     seed = os.environ.get("PODCAST_ADMIN_PASSWORD", "")
     if seed:
         set_password(seed)
         return ""
     generated = secrets.token_urlsafe(18)
     set_password(generated)
+    data = state.load()
+    data["initial_password"] = generated
+    state.save(data)
     return generated
 
 

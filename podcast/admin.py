@@ -168,7 +168,7 @@ def page(cfg, session: str, msg="", err="", detail="", new_key="") -> str:
 <h1>Klíče k Ollama proxy</h1>
 <p class="sub">Klíč je tajemství, proto nežije v <code>config.yaml</code>, ale v
 <code>{store}</code> (práva 600). Agent používá ten označený jako aktivní.</p>
-{msg}{err}{env}
+{msg}{err}{env}{initial}
 <div class="panel">
 <div><b>Teď platí:</b> {url} <span class="mute">({url_src})</span>, klíč <code>{masked}</code>
 <span class="mute">({key_src})</span></div>
@@ -242,6 +242,9 @@ použije se jednou a zapomene.</p>
         msg=('<div class="flash good">' + escape(msg) + "</div>") if msg else "",
         err=('<div class="flash bad">' + escape(err) + "</div>") if err else "",
         env=env_note, detail=detail, new_key=new_key,
+        initial=('<div class="flash bad">Používáš heslo vygenerované při prvním startu. '
+                 'Změň si ho dole — do té doby se vypisuje do logu při každém startu.</div>')
+                if auth.initial_password() else "",
         feed_url=escape(feed_link(cfg)), episodes=len(feedmod.load_episodes(cfg.path("output.dir", "out"))),
         saved_url=escape(state.load().get("proxy_url", "")), min_pw=auth.MIN_PASSWORD,
         url=escape(url or "—"), url_src=escape(url_src), key_src=escape(key_src),

@@ -1,0 +1,42 @@
+# Varianta bez registry: image se postaví po SSH přímo na NASu a tady se jen
+# použije. Jednodušší (žádný token na packages), ale aktualizace znamená
+# přestavět image ručně — nebo zapnout self-update z Gitu (REPO_URL níž).
+services:
+  podcast-agent:
+    image: podcast-agent:latest
+    pull_policy: never       # bez tohohle by TrueNAS hlásil "pull access denied"
+    container_name: podcast-agent
+    restart: unless-stopped
+    ports:
+      - '8089:8089'
+    environment:
+      TZ: Europe/Prague
+      RUN_AT: '03:10'
+      ADMIN_PORT: '8089'
+      PODCAST_BEHIND_PROXY: ''
+      TRUSTED_PROXY_IPS: 127.0.0.1
+      PODCAST_ADMIN_ALLOW: ''
+      REPO_URL: ''
+      REPO_BRANCH: main
+      GIT_USER: claude-bot
+      GIT_TOKEN: ''
+    networks:
+      - ollamaNet
+    volumes:
+      - type: volume
+        source: podcast-data
+        target: /data
+      - type: volume
+        source: podcast-code
+        target: /app/src
+
+networks:
+  ollamaNet:
+    name: ollamaNet
+    external: true
+
+volumes:
+  podcast-data:
+    name: podcast_data
+  podcast-code:
+    name: podcast_code

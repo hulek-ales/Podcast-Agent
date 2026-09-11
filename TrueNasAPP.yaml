@@ -1,0 +1,53 @@
+# Compose pro TrueNAS SCALE → Apps → Discover Apps → Install via YAML (custom app).
+#
+# Image se bere z registry v Gitea (Gitea umí registry kontejnerů na stejné
+# adrese jako Git). V TrueNASu musí být ta registry přidaná:
+#   Apps → Configuration → Manage Container Images → Docker Registries → Add
+#   URI: https://git.aleshulek.cz   Username: claude-bot   Password: <token s package>
+#
+# Jak image postavit a pushnout: DEPLOY-TRUENAS.md
+#
+# Hesla ani klíče tu nejsou schválně — heslo do administrace se vyrobí při
+# prvním startu a najdeš ho v logu appky, klíč k proxy zadáš v administraci.
+services:
+  podcast-agent:
+    image: git.aleshulek.cz/podcast_ai_agent/agent-app:latest
+    pull_policy: always
+    container_name: podcast-agent
+    restart: unless-stopped
+    ports:
+      - '8089:8089'
+    environment:
+      TZ: Europe/Prague
+      RUN_AT: '03:10'          # kdy vyrábět díl; prázdné = jednou hned a skončit
+      ADMIN_PORT: '8089'
+      # --- za reverzní proxou (vystavení do internetu) ---
+      PODCAST_BEHIND_PROXY: ''        # '1' = věřit X-Forwarded-For/-Proto
+      TRUSTED_PROXY_IPS: 127.0.0.1    # adresa té reverzní proxy, NE '*'
+      PODCAST_ADMIN_ALLOW: ''         # např. 192.168.1.0/24 = administrace jen z domova
+      # --- self-update z Gitu (nepovinné, když nechceš přestavovat image) ---
+      REPO_URL: ''             # https://git.aleshulek.cz/Podcast_AI_Agent/Agent_app.git
+      REPO_BRANCH: main
+      GIT_USER: claude-bot
+      GIT_TOKEN: ''            # token jen pro čtení (repository: Přečtené)
+    networks:
+      - ollamaNet
+    volumes:
+      - type: volume
+        source: podcast-data
+        target: /data
+      - type: volume
+        source: podcast-code
+        target: /app/src       # kód z Gitu, když je zapnutý self-update
+
+networks:
+  ollamaNet:
+    name: ollamaNet
+    # síť už existuje (visí na ní Open WebUI i ollama-proxy)
+    external: true
+
+volumes:
+  podcast-data:
+    name: podcast_data
+  podcast-code:
+    name: podcast_code

@@ -39,10 +39,14 @@ python -m podcast.run                  # vyrobí díl
 V Dockeru (vedle proxy, síť `ollamaNet`):
 
 ```bash
-PODCAST_ADMIN_PASSWORD=… docker compose up -d --build
+docker compose up -d --build
 # poprvé se do svazku zkopíruje vzor konfigurace a kontejner skončí — uprav ji a restartuj
 docker compose restart podcast-agent
+docker compose logs podcast-agent | grep -A 3 HESLO    # heslo do administrace
 ```
+
+Na TrueNAS SCALE: **[DEPLOY-TRUENAS.md](DEPLOY-TRUENAS.md)** (Apps neumí stavět
+image, takže se bere z registry v Gitea nebo se postaví po SSH).
 
 Adresu feedu i s tokenem pak najdeš v administraci na `http://server:8089`.
 

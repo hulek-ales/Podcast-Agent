@@ -1,0 +1,26 @@
+# Postaví image a pushne ho do registry v Gitea po každém pushi do main.
+# Funguje jen s nainstalovaným act_runnerem; bez něj soubor nic nedělá.
+#
+# Potřebuje tajemství REGISTRY_TOKEN (Gitea → repo → Settings → Secrets):
+# token uživatele s oprávněním `package: čtení i zápis`.
+name: docker
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Přihlásit do registry
+        run: echo "${{ secrets.REGISTRY_TOKEN }}" | docker login git.aleshulek.cz -u "${{ github.actor }}" --password-stdin
+
+      - name: Postavit a pushnout
+        run: |
+          IMAGE=git.aleshulek.cz/$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')/agent-app
+          docker build -t "$IMAGE:latest" -t "$IMAGE:${{ github.sha }}" .
+          docker push "$IMAGE:latest"
+          docker push "$IMAGE:${{ github.sha }}"

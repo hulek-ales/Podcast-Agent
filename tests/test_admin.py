@@ -211,9 +211,17 @@ def test_admin_disabled_until_password_exists(store, monkeypatch):
 
         generated = auth.bootstrap()
         assert len(generated) >= 20 and auth.check_password(generated)
-        assert auth.bootstrap() == ""                  # podruhé už nic nevyrábí
+        # vrací se pořád dokola, dokud si člověk nenastaví vlastní — kdyby se
+        # ten jediný výpis ztratil, nebylo by jak se do administrace dostat
+        assert auth.bootstrap() == generated
+        assert auth.initial_password() == generated
+
         r = client.post("/login", data={"password": generated}, follow_redirects=False)
         assert r.status_code == 303 and client.cookies.get("podcast_admin")
+        assert "vygenerované při prvním startu" in client.get("/").text
+
+        auth.set_password("vlastni-dlouhe-heslo")      # vlastní heslo výpis umlčí
+        assert auth.initial_password() == "" and auth.bootstrap() == ""
 
 
 def test_bootstrap_uses_env_password_when_given(store, monkeypatch):
