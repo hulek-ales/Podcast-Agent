@@ -49,7 +49,7 @@ Bez tokenů na balíčky, ale aktualizace znamená přestavět image po SSH.
 
 ```bash
 cd /mnt/tank/apps                     # do datasetu, ne do /root
-git clone https://claude-bot:TOKEN@git.aleshulek.cz/Podcast_AI_Agent/Agent_app.git podcast-agent
+git clone https://github.com/hulek-ales/Podcast-Agent.git podcast-agent
 cd podcast-agent
 docker build -t podcast-agent:latest .
 docker images | grep podcast-agent    # kontrola

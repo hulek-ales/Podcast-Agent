@@ -4,17 +4,21 @@ Cíl: pushnu kód a na TrueNASu za chvíli běží nová verze. Bez SSH, bez ru�
 `docker build`, u každého dalšího projektu stejně — a hlavně bez toho, abych
 doma hostoval a hlídal build server.
 
-**Doporučení: GitHub se soukromými repozitáři + GHCR.** Build běží na strojích
+**Doporučení: GitHub + GHCR.** Build běží na strojích
 GitHubu, doma neběží nic navíc. Na TrueNASu se **jednou** přidají přihlašovací
 údaje ke `ghcr.io` a platí pro všechny appky.
 
 ```
-  git push  ──►  GitHub (soukromé repo)  ──►  Actions postaví image  ──►  ghcr.io (soukromý balíček)
+  git push  ──►  GitHub  ──►  Actions postaví image  ──►  ghcr.io (balíček)
                                                                               │
                                                         TrueNAS app  ◄────────┘  pull_policy: always
 ```
 
-## 1. Jednorázově na TrueNASu
+## 1. Jednorázově na TrueNASu (jen u soukromých repozitářů)
+
+Dokud jsou repa veřejná, balíček v GHCR je veřejný a TrueNAS ho stáhne bez
+přihlašování — tuhle kapitolu přeskoč. Až je zamkneš, vrať se sem.
+
 
 Token: GitHub → Settings → Developer settings → Personal access tokens →
 **Tokens (classic)** → oprávnění **`read:packages`** a **`repo`** (to druhé je
@@ -127,20 +131,24 @@ cizím restartu chvíli hlásit nesoulad.
 
 Doporučuju začít **(a)** a přejít na (b), až tě to začne otravovat.
 
-## 5. Přesun z Gitea na GitHub
+## 5. Kde co je
 
-Historie zůstane, stačí přidat druhý vzdálený repozitář:
+Projekt žije na GitHubu:
+
+- [`hulek-ales/Podcast-Agent`](https://github.com/hulek-ales/Podcast-Agent) — agent
+- [`hulek-ales/podcast-tts`](https://github.com/hulek-ales/podcast-tts) — TTS služba
+
+Zatím **veřejná**, ať se odlaďuje bez tokenů; balíčky v GHCR jsou pak taky veřejné
+a limity Free plánu se neuplatní. Až se repa zamknou, platí všechno z kapitoly 3
+a v TrueNASu je potřeba přidat přihlášení ke `ghcr.io` (kapitola 1).
+
+Přenést repo jinam (třeba zpátky do Gitea) jde bez ztráty historie:
 
 ```bash
-git clone https://claude-bot:TOKEN@git.aleshulek.cz/Podcast_AI_Agent/Agent_app.git
-cd Agent_app
-# na GitHubu založ prázdné soukromé repo, pak:
-git remote add github https://github.com/<ty>/podcast-agent.git
-git push github main
-git remote set-url origin https://github.com/<ty>/podcast-agent.git   # ať je GitHub hlavní
+git remote add jinam https://…/repo.git
+git push jinam main
+git remote set-url origin https://…/repo.git   # ať je nový hlavní
 ```
-
-Gitea může zůstat jako zrcadlo (Nastavení repa → Mirror), nebo ji nech dožít.
 
 ## Alternativy, které jsem zvážil
 

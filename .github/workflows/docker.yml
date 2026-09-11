@@ -25,11 +25,16 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # jen :latest — každý commit jako vlastní tag by snědl 500 MB kvóty
+      # GHCR bere jen malá písmena, a repo se jmenuje Podcast-Agent
+      - id: image
+        run: echo "name=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      # jen :latest — každý commit jako vlastní tag by u soukromého repa snědl
+      # 500 MB kvóty; u veřejného na tom nezáleží
       - uses: docker/build-push-action@v6
         with:
           context: .
           push: true
-          tags: ghcr.io/${{ github.repository }}:latest
+          tags: ${{ steps.image.outputs.name }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max

@@ -27,7 +27,7 @@ RSS ──► sběr ──► shluky ──► shrnutí ──► scénář ─�
 ## Rychlý start
 
 ```bash
-git clone https://git.aleshulek.cz/Podcast_AI_Agent/Agent_app.git && cd Agent_app
+git clone https://github.com/hulek-ales/Podcast-Agent.git && cd Podcast-Agent
 cp config.example.yaml config.yaml     # uprav zdroje, modely a output.base_url
 export PODCAST_PROXY_KEY=opx_…         # klíč z proxy (GUI → API klíče)
 pip install -r requirements.txt

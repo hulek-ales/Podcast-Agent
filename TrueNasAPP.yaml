@@ -28,7 +28,7 @@ services:
       TRUSTED_PROXY_IPS: 127.0.0.1    # adresa té reverzní proxy, NE '*'
       PODCAST_ADMIN_ALLOW: ''         # např. 192.168.1.0/24 = administrace jen z domova
       # --- self-update z Gitu (nepovinné, když nechceš přestavovat image) ---
-      REPO_URL: ''             # nepovinné, když nechceš přestavovat image
+      REPO_URL: ''             # https://github.com/hulek-ales/Podcast-Agent.git (nepovinný self-update)
       REPO_BRANCH: main
       GIT_USER: claude-bot
       GIT_TOKEN: ''            # token jen pro čtení (repository: Přečtené)
