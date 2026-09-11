@@ -134,3 +134,99 @@ def test_prompt_extra_reaches_the_script():
                              "articles": [{"link": "https://x/1"}]}], "11. září 2026")
     assert "Zvláštní pokyny k tomuhle pořadu" in opx.prompt
     assert "vynech sport" in opx.prompt
+
+
+# ------------------------------------------- náhled textu před namluvením
+
+@pytest.fixture
+def drafted(store, monkeypatch):
+    """Pořad s hotovým scénářem ve work/, ale bez zvuku."""
+    import json
+    from podcast import runner
+    monkeypatch.setenv("PODCAST_ADMIN_PASSWORD", "")
+    (store / "config.yaml").write_text(
+        "models: {embed: e, summarize: s, script: m, script_provider: p, tts: t}\n"
+        "output: {dir: '" + str(store / "public") + "', work_dir: '" + str(store / "work")
+        + "', base_url: 'http://server:8089'}\n", encoding="utf-8")
+    shows.upsert(make())
+    from podcast import config
+    cfg = config.load()
+    day_dir = os.path.join(runner.work_dir(cfg, "prehled-dne"), "2026-09-11")
+    os.makedirs(day_dir, exist_ok=True)
+    episode = {"title": "Přehled dne, 11. září", "intro": "Dobré ráno.",
+               "segments": [{"title": "Rozpočet", "text": "Vláda schválila rozpočet. Bylo to 47 hlasů."}],
+               "outro": "Mějte se.",
+               "sources": [{"title": "Rozpočet", "sources": ["ČT24"], "links": ["https://ct24.cz/a"]}]}
+    with open(os.path.join(day_dir, "script.json"), "w", encoding="utf-8") as f:
+        json.dump(episode, f)
+    return cfg, episode
+
+
+def test_draft_is_found_and_can_be_discarded(drafted):
+    from podcast import runner
+    cfg, episode = drafted
+    assert runner.drafts(cfg, "prehled-dne") == ["2026-09-11"]
+    stamp, found = runner.draft(cfg, "prehled-dne")
+    assert stamp == "2026-09-11" and found["title"] == episode["title"]
+    assert not runner.published(cfg, "prehled-dne", stamp)      # zvuk ještě není
+
+    assert runner.discard_draft(cfg, "prehled-dne", stamp)
+    assert runner.drafts(cfg, "prehled-dne") == []
+    assert runner.draft(cfg, "prehled-dne") is None
+    assert not runner.discard_draft(cfg, "prehled-dne", stamp)
+    assert not runner.discard_draft(cfg, "prehled-dne", "")     # prázdné datum nesmí smazat vše
+
+
+def test_draft_page_shows_text_and_warns_about_digits(drafted, monkeypatch):
+    import importlib
+    from fastapi.testclient import TestClient
+    from podcast import admin as module, auth
+    cfg, episode = drafted
+    auth.set_password("dlouhe-heslo-na-test")
+    importlib.reload(module)
+    client = TestClient(module.app)
+    client.post("/login", data={"password": "dlouhe-heslo-na-test", "next": "/"})
+
+    page = client.get("/shows/prehled-dne/draft").text
+    assert "Přehled dne, 11. září" in page
+    assert "Dobré ráno." in page and "Vláda schválila rozpočet." in page
+    assert "Namluvit a zveřejnit" in page
+    assert "zůstaly číslice" in page and "47 hlasů" in page     # upozorní na nerozepsané číslo
+    assert "ct24.cz" in page                                    # zdroje k ověření
+
+    # na stránce pořadů je vidět, že je co prohlédnout
+    assert "rozepsaný text" in client.get("/").text
+
+    # zahodit → náhled zmizí
+    from podcast import auth as a
+    token = a.csrf(client.cookies.get(a.COOKIE))
+    r = client.post("/shows/prehled-dne/discard", data={"csrf": token, "stamp": "2026-09-11"},
+                    follow_redirects=False)
+    assert "msg=" in r.headers["location"]
+    r = client.get("/shows/prehled-dne/draft", follow_redirects=False)
+    assert r.status_code == 303 and "err=" in r.headers["location"]
+
+
+def test_run_mode_decides_whether_audio_is_made(drafted, monkeypatch):
+    import importlib
+    from fastapi.testclient import TestClient
+    from podcast import admin as module, auth, runner
+    auth.set_password("dlouhe-heslo-na-test")
+    importlib.reload(module)
+    client = TestClient(module.app)
+    client.post("/login", data={"password": "dlouhe-heslo-na-test", "next": "/"})
+    token = auth.csrf(client.cookies.get(auth.COOKIE))
+
+    calls = []
+    monkeypatch.setattr(runner, "run_in_background",
+                        lambda slug, day=None, steps=None, resume=False:
+                        calls.append((slug, steps, resume)))
+
+    client.post("/shows/prehled-dne/run", data={"csrf": token, "mode": "text"})
+    assert calls[-1] == ("prehled-dne", ("collect", "cluster", "summarize", "script"), False)
+
+    client.post("/shows/prehled-dne/run", data={"csrf": token, "mode": "full"})
+    assert calls[-1] == ("prehled-dne", None, False)            # None = všechny kroky
+
+    client.post("/shows/prehled-dne/speak", data={"csrf": token, "stamp": "2026-09-11"})
+    assert calls[-1] == ("prehled-dne", ("speak",), True)       # naváže na hotový text

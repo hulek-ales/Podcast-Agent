@@ -8,7 +8,9 @@ ať se po restartu nevyrobí den dvakrát), takže administrace umí ukázat, co
 zrovna děje, a nabídnout „vyrobit teď“.
 """
 
+import json
 import os
+import shutil
 import threading
 import traceback
 from datetime import datetime
@@ -180,7 +182,50 @@ def start_scheduler():
     return thread
 
 
-def run_in_background(slug: str):
-    """„Vyrobit teď“ z administrace — nesmí držet HTTP odpověď."""
-    threading.Thread(target=run_show, args=(slug,), daemon=True,
+def run_in_background(slug: str, day: datetime = None, steps: tuple = None,
+                      resume: bool = False):
+    """Běh z administrace — nesmí držet HTTP odpověď, tak jde na vlákno."""
+    threading.Thread(target=run_show, args=(slug, day, steps, resume), daemon=True,
                      name="run-" + slug).start()
+
+
+# ------------------------------------------------------ rozepsané díly
+
+def work_dir(cfg, slug: str) -> str:
+    return os.path.join(cfg.path("output.work_dir", "work"), slug)
+
+
+def drafts(cfg, slug: str) -> list:
+    """Data rozepsaných dílů (těch, co mají hotový scénář), od nejnovějšího."""
+    root = work_dir(cfg, slug)
+    if not os.path.isdir(root):
+        return []
+    return sorted((name for name in os.listdir(root)
+                   if os.path.isfile(os.path.join(root, name, "script.json"))), reverse=True)
+
+
+def draft(cfg, slug: str, stamp: str = None):
+    """Scénář rozepsaného dílu: (datum, episode) nebo None."""
+    stamps = [stamp] if stamp else drafts(cfg, slug)
+    for value in stamps:
+        path = os.path.join(work_dir(cfg, slug), value, "script.json")
+        try:
+            with open(path, encoding="utf-8") as f:
+                return value, json.load(f)
+        except (OSError, ValueError):
+            continue
+    return None
+
+
+def discard_draft(cfg, slug: str, stamp: str) -> bool:
+    """Zahodí rozdělanou práci k tomu dni, ať se díl udělá znovu od začátku."""
+    target = os.path.join(work_dir(cfg, slug), stamp)
+    if not os.path.isdir(target) or not stamp:
+        return False
+    shutil.rmtree(target, ignore_errors=True)
+    return True
+
+
+def published(cfg, slug: str, stamp: str) -> bool:
+    """Je k tomu dni hotový zvuk (a tedy díl ve feedu)?"""
+    return any(m["slug"] == stamp for m in feedmod.load_episodes(episode_dir(cfg, slug)))

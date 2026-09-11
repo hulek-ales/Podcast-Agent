@@ -236,8 +236,20 @@ i vlastní podcastový feed, takže si je v telefonu přidáš jako samostatné 
 | feed | `…/prehled-dne/feed.xml?token=…` | `…/tech-tydenik/feed.xml?token=…` |
 
 Zakládají se v administraci (**Pořady**) a leží v `shows.json` vedle konfigurace.
-Tlačítko **vyrobit teď** udělá díl mimo rozvrh; běhy se řadí za sebe, protože
-si přes proxy sahají na GPU.
+
+### Text napřed, hlas až potom
+
+Namluvení stojí čas i peníze, tak se dá díl vyrobit na dvakrát:
+
+1. **napsat text** — projde sběr, shrnutí a scénář, ale nic se nenamlouvá;
+2. **náhled** — scénář si přečteš v prohlížeči rozdělený po tématech, s odkazy
+   na zdroje u každého a s upozorněním na věty, kde zůstaly číslice (ty TTS
+   přečte po svém);
+3. **namluvit a zveřejnit** — pustí syntézu na hotový text a díl se objeví ve feedu.
+   Nebo **zahodit a napsat znovu**, když se scénář nepovedl.
+
+Tlačítko **celý díl** udělá obojí naráz. Běhy se řadí za sebe, protože si přes
+proxy sahají na jednu GPU.
 
 **Zadání pro pořad** je volný text, který se přilepí do pokynů scénáristovi —
 „mluv neformálně“, „na konci shrň tři věty, co si odnést“, „vynech sport“.
@@ -256,7 +268,8 @@ proběhlo (a co stálo peníze):
 python -m podcast.run --list                       # pořady a jejich rozvrh
 python -m podcast.run --show prehled-dne           # vyrobit díl
 python -m podcast.run --show prehled-dne --steps collect,cluster,summarize,script   # bez namluvení
-python -m podcast.run --show prehled-dne --resume  # dodělat zbytek
+python -m podcast.run --show prehled-dne --resume  # dodělat zbytek (třeba jen namluvit)
+python -m podcast.run --show prehled-dne --steps speak --resume --date 2026-09-11
 python -m podcast.run --due                        # co má zrovna čas (dělá plánovač sám)
 ```
 

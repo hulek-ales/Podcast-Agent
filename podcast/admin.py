@@ -22,7 +22,9 @@ from html import escape
 from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 
-from . import auth, config, feed as feedmod, keys, runner, shows, state
+from datetime import datetime
+
+from . import auth, config, feed as feedmod, keys, runner, script, shows, state
 from .opx import OpxClient, OpxError
 
 app = FastAPI(title="Podcast agent", docs_url=None, redoc_url=None, openapi_url=None)
@@ -504,6 +506,11 @@ def show_cards(cfg, token: str) -> str:
             note = ('<div class="help ' + ("" if result["ok"] else "bad") + '">poslední běh: '
                     + escape(result["message"]) + "</div>")
         episodes = feedmod.load_episodes(runner.episode_dir(cfg, slug))
+        found = runner.draft(cfg, slug)
+        draft_stamp = found[0] if found else ""
+        if draft_stamp and not runner.published(cfg, slug, draft_stamp):
+            note += ('<div class="help warn">rozepsaný text k ' + escape(draft_stamp)
+                     + " — <a href='/shows/" + slug + "/draft'>prohlédnout a namluvit</a></div>")
         out.append(
             '<div class="panel"><div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap">'
             + "<div><b>" + escape(show["title"]) + "</b> "
@@ -517,7 +524,14 @@ def show_cards(cfg, token: str) -> str:
             + '<div style="white-space:nowrap">'
             + '<form method="post" action="/shows/' + slug + '/run" style="display:inline">'
               '<input type="hidden" name="csrf" value="' + token + '">'
-              '<button>vyrobit teď</button></form> '
+              '<input type="hidden" name="mode" value="text">'
+              '<button>napsat text</button></form> '
+            + ('<a class="btn" href="/shows/' + slug + '/draft" style="padding:6px 14px">náhled</a> '
+               if draft_stamp else "")
+            + '<form method="post" action="/shows/' + slug + '/run" style="display:inline">'
+              '<input type="hidden" name="csrf" value="' + token + '">'
+              '<input type="hidden" name="mode" value="full">'
+              '<button class="link">celý díl</button></form> '
             + '<a class="btn" href="/?edit=' + slug + '" style="padding:6px 14px">upravit</a> '
             + '<form method="post" action="/shows/' + slug + '/delete" style="display:inline" '
               'onsubmit="return confirm(\'Smazat pořad ' + escape(show["title"]) + ' i s díly?\')">'
@@ -605,15 +619,126 @@ async def shows_save(request: Request):
 
 
 @app.post("/shows/{slug}/run")
-def shows_run(slug: str, request: Request, csrf: str = Form("")):
+def shows_run(slug: str, request: Request, csrf: str = Form(""), mode: str = Form("text")):
+    """mode=text → jen scénář k prohlédnutí, mode=full → rovnou i namluvení."""
     check_csrf(csrf, require(request))
     if shows.get(slug) is None:
         return back(err="Pořad neexistuje.", where="/")
     busy = runner.status()["running"]
     if busy:
         return back(err="Právě se vyrábí " + busy + ", zkus to, až doběhne.", where="/")
-    runner.run_in_background(slug)
-    return back(msg="Výroba spuštěna — potrvá to podle fronty úloh, stav se ukáže tady.", where="/")
+    steps = None if mode == "full" else ("collect", "cluster", "summarize", "script")
+    runner.run_in_background(slug, steps=steps)
+    return back(msg=("Píšu text — až doběhne, objeví se tady odkaz na náhled."
+                     if mode != "full" else
+                     "Vyrábím celý díl — potrvá to podle fronty úloh."), where="/")
+
+# --------------------------------------------------- náhled scénáře
+
+DRAFT_PAGE = """<!doctype html><html lang="cs"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{title} · Podcast agent</title><style>{css}</style></head><body>
+<header><span>Podcast agent</span>
+<nav><a href="/" class="on">Pořady</a> <a href="/nastaveni">Nastavení</a></nav>
+<form method="post" action="/logout"><input type="hidden" name="csrf" value="{token}">
+<button class="link">odhlásit</button></form></header><main>
+<p class="sub"><a href="/">&larr; zpět na pořady</a></p>
+<h1>{title}</h1>
+<p class="sub">{show} · {stamp} · {chars} znaků, zhruba {minutes} min mluvení · {segments} témat</p>
+{msg}{err}{warn}{state}
+<div class="panel" style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+<form method="post" action="/shows/{slug}/speak">
+  <input type="hidden" name="csrf" value="{token}">
+  <input type="hidden" name="stamp" value="{stamp}">
+  <button>{speak_label}</button></form>
+<form method="post" action="/shows/{slug}/discard" onsubmit="return confirm('Zahodit text a napsat ho znovu?')">
+  <input type="hidden" name="csrf" value="{token}">
+  <input type="hidden" name="stamp" value="{stamp}">
+  <button class="link danger">zahodit a napsat znovu</button></form>
+<span class="help">Namluvení pustí syntézu přes proxy — potrvá podle toho, kdy bude volná GPU.</span>
+</div>
+{body}
+<h2>Zdroje</h2>
+<div class="panel">{sources}</div>
+</main></body></html>"""
+
+
+def draft_body(episode: dict) -> str:
+    out = ['<div class="panel"><b>Úvod</b><p>' + escape(episode.get("intro", "")) + "</p></div>"]
+    for i, seg in enumerate(episode.get("segments", []), 1):
+        out.append('<div class="panel"><b>' + str(i) + ". " + escape(seg.get("title", ""))
+                   + "</b><p>" + escape(seg.get("text", "")).replace("\n", "<br>") + "</p></div>")
+    out.append('<div class="panel"><b>Závěr</b><p>' + escape(episode.get("outro", "")) + "</p></div>")
+    return "".join(out)
+
+
+def draft_sources(episode: dict) -> str:
+    rows = []
+    for item in episode.get("sources", []):
+        links = " ".join('<a href="' + escape(l) + '" target="_blank" rel="noreferrer">'
+                         + escape(l.split("/")[2] if "/" in l else l) + "</a>"
+                         for l in item.get("links", []))
+        rows.append("<div><b>" + escape(item.get("title", "")) + "</b> <span class='mute'>"
+                    + escape(", ".join(item.get("sources", []))) + "</span><br>"
+                    + '<span class="help">' + links + "</span></div>")
+    return "<br>".join(rows) or '<span class="mute">—</span>'
+
+
+@app.get("/shows/{slug}/draft", response_class=HTMLResponse)
+def show_draft(slug: str, request: Request):
+    session = require(request)
+    cfg = config.load()
+    show = shows.get(slug)
+    if show is None:
+        return back(err="Pořad neexistuje.", where="/")
+    found = runner.draft(cfg, slug, request.query_params.get("stamp") or None)
+    if found is None:
+        return back(err="Pro tenhle pořad zatím žádný text není — dej „napsat text“.", where="/")
+    stamp, episode = found
+    text = script.spoken_text(episode)
+    digits = script.digits_left(episode)
+    done = runner.published(cfg, slug, stamp)
+    running = runner.status()["running"]
+    return HTMLResponse(DRAFT_PAGE.format(
+        css=CSS, token=auth.csrf(session), slug=slug, stamp=escape(stamp),
+        title=escape(episode.get("title") or "Scénář"), show=escape(show["title"]),
+        chars=len(text), minutes=max(1, round(len(text) / 15 / 60)),
+        segments=len(episode.get("segments", [])),
+        msg=('<div class="flash good">' + escape(request.query_params.get("msg", "")) + "</div>")
+            if request.query_params.get("msg") else "",
+        err=('<div class="flash bad">' + escape(request.query_params.get("err", "")) + "</div>")
+            if request.query_params.get("err") else "",
+        warn=('<div class="flash bad">V ' + str(len(digits)) + " větách zůstaly číslice — TTS je "
+              "přečte po svém:<br>" + "<br>".join(escape(d) for d in digits[:5]) + "</div>")
+             if digits else "",
+        state=('<div class="flash">Tenhle díl už je namluvený a ve feedu. Nové namluvení ho '
+               'přepíše.</div>') if done else
+              ('<div class="flash">Právě se vyrábí <b>' + escape(running) + "</b>.</div>")
+              if running else "",
+        speak_label="Namluvit znovu" if done else "Namluvit a zveřejnit",
+        body=draft_body(episode), sources=draft_sources(episode)))
+
+
+@app.post("/shows/{slug}/speak")
+def shows_speak(slug: str, request: Request, csrf: str = Form(""), stamp: str = Form("")):
+    check_csrf(csrf, require(request))
+    cfg = config.load()
+    if shows.get(slug) is None or runner.draft(cfg, slug, stamp) is None:
+        return back(err="Není co namluvit.", where="/")
+    busy = runner.status()["running"]
+    if busy:
+        return back(err="Právě se vyrábí " + busy + ", zkus to, až doběhne.", where="/")
+    day = datetime.strptime(stamp, "%Y-%m-%d")
+    runner.run_in_background(slug, day, ("speak",), resume=True)
+    return back(msg="Namlouvám — stav uvidíš na stránce pořadů.", where="/")
+
+
+@app.post("/shows/{slug}/discard")
+def shows_discard(slug: str, request: Request, csrf: str = Form(""), stamp: str = Form("")):
+    check_csrf(csrf, require(request))
+    if not runner.discard_draft(config.load(), slug, stamp):
+        return back(err="Nic k zahození.", where="/")
+    return back(msg="Text zahozen. Dej „napsat text“ a napíše se znovu.", where="/")
 
 
 @app.post("/shows/{slug}/delete")
