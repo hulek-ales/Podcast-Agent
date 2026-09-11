@@ -14,7 +14,12 @@ models:
   summarize: gemma4:12b          # lokální, přes frontu úloh (objemová práce)
   script: gpt-5-mini             # komerční přes proxy — tady záleží na češtině
   script_provider: openai        # slug poskytovatele v proxy
-  tts: tts-cs                    # model GPU služby (poskytovatel typu gpu)
+  # Hlas: buď lokální GPU služba, nebo komerční API — obojí přes proxy.
+  #   lokální:  tts: tts-cs            a tts_provider nechat prázdné
+  #   OpenAI:   tts: gpt-4o-mini-tts   a tts_provider: openai
+  # Než budeš mít vlastní TTS, OpenAI je nejrychlejší cesta, jak si díl poslechnout.
+  tts: tts-cs
+  tts_provider: ""
 
 episode:
   style: anchor                  # anchor | brief | duo
@@ -26,7 +31,7 @@ episode:
   temperature: ""                # prázdné = neposílat; modely řady gpt-5 jinou
                                  # než výchozí hodnotu odmítnou (HTTP 400)
   # předává se GPU službě:
-  voice: jirka.wav               # referenční hlas (soubor ve službě)
+  voice: jirka.wav               # lokální služba: referenční hlas; OpenAI: alloy, nova, …
   language: cs
   response_format: mp3
   speed: 1.0
@@ -36,6 +41,8 @@ tts:
   priority: 3
   poll_s: 15
   timeout_s: 7200
+  max_chars: 3800                # jen komerční API: strop na délku jednoho dotazu
+                                 # (OpenAI bere 4096 znaků), text se rozdělí a slepí
 
 jobs:                            # shrnutí přes frontu úloh
   priority: 7

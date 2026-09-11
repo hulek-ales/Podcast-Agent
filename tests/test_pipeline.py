@@ -145,3 +145,66 @@ def test_hint_explains_common_rejections():
     assert script_mod.hint(OpxError(404, "no such provider"), {}).startswith("\n\nModel nebo poskytovatel")
     assert "allowed_models" in script_mod.hint(OpxError(403, "not allowed"), {})
     assert script_mod.hint(OpxError(500, "boom"), {}) == ""
+
+
+def test_split_text_respects_limit_and_boundaries():
+    from podcast import speak
+    assert speak.split_text("krátké", 100) == ["krátké"]
+
+    text = ("První odstavec má několik vět. A tady je druhá věta.\n\n"
+            "Druhý odstavec je taky nějaký dlouhý a pokračuje dál.\n\n"
+            "Třetí.")
+    chunks = speak.split_text(text, 60)
+    assert all(len(c) <= 60 for c in chunks)
+    assert "".join(chunks).replace("\n\n", " ").replace(" ", "") == text.replace("\n\n", " ").replace(" ", "")
+
+    # věta delší než strop se rozsekne, ale nic se neztratí
+    long_one = "a" * 250
+    chunks = speak.split_text(long_one, 100)
+    assert len(chunks) == 3 and "".join(chunks) == long_one
+
+
+def test_commercial_tts_chunks_and_joins(tmp_path):
+    """Komerční API má strop na délku, tak se text dělí tady a kusy se slepí."""
+    from podcast import speak
+    from podcast.config import Config
+
+    sent = []
+
+    class FakeOpx:
+        def speak(self, model, text, provider="", **extra):
+            sent.append((model, provider, text, extra))
+            return b"MP3" + text[:3].encode()
+
+    cfg = Config({"models": {"tts": "gpt-4o-mini-tts", "tts_provider": "openai"},
+                  "episode": {"voice": "alloy", "response_format": "mp3"},
+                  "tts": {"mode": "direct", "max_chars": 40}})
+    dest = str(tmp_path / "dil.mp3")
+    text = "První věta je tady. Druhá věta je o kus dál. Třetí uzavírá odstavec."
+    speak.synthesize(FakeOpx(), cfg, text, dest)
+
+    assert len(sent) > 1 and all(len(s[2]) <= 40 for s in sent)
+    assert all(s[1] == "openai" and s[0] == "gpt-4o-mini-tts" for s in sent)
+    assert sent[0][3] == {"voice": "alloy", "response_format": "mp3"}
+    with open(dest, "rb") as f:
+        assert f.read().startswith(b"MP3")
+
+
+def test_local_tts_sends_whole_episode_at_once(tmp_path):
+    """Lokální službě jde celý díl najednou, ať proxy nepřehazuje kartu."""
+    from podcast import speak
+    from podcast.config import Config
+
+    sent = []
+
+    class FakeOpx:
+        def speak(self, model, text, provider="", **extra):
+            sent.append((model, provider, len(text)))
+            return b"RIFF"
+
+    cfg = Config({"models": {"tts": "tts-cs", "tts_provider": ""},
+                  "episode": {"voice": "jirka.wav", "language": "cs"},
+                  "tts": {"mode": "direct", "max_chars": 40}})
+    text = "Věta. " * 100
+    speak.synthesize(FakeOpx(), cfg, text, str(tmp_path / "dil.wav"))
+    assert len(sent) == 1 and sent[0] == ("tts-cs", "", len(text))   # bez dělení, bez poskytovatele

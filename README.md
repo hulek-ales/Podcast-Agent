@@ -21,7 +21,7 @@ RSS ──► sběr ──► shluky ──► shrnutí ──► scénář ─�
 | shluky | **lokálně** přes proxy (`nomic-embed-text`) | levné, 300 MB VRAM; velikost shluku = důležitost |
 | shrnutí | **lokálně**, přes frontu úloh (`/mgmt/v1/jobs`) | objemová práce, styl nerozhoduje; počká na volnou GPU |
 | scénář | **komerčně** přes proxy (`/providers/openai/…`) | jediné místo, kde záleží na češtině; haléře na díl |
-| hlas | **GPU služba** v proxy (`/v1/audio/speech`) | jeden díl = jeden dotaz, proxy kvůli němu uvolní Ollamu |
+| hlas | **GPU služba** v proxy, nebo komerční TTS | lokálně jeden díl = jeden dotaz (proxy kvůli němu uvolní Ollamu); komerčně se GPU nečeká |
 | feed | agent | RSS 2.0 + iTunes, `<enclosure>` na mp3, za tokenem |
 
 ## Rychlý start
@@ -247,6 +247,27 @@ Namluvení stojí čas i peníze, tak se dá díl vyrobit na dvakrát:
    přečte po svém);
 3. **namluvit a zveřejnit** — pustí syntézu na hotový text a díl se objeví ve feedu.
    Nebo **zahodit a napsat znovu**, když se scénář nepovedl.
+
+### Hlas: lokální služba, nebo OpenAI
+
+Než budeš mít vlastní TTS kontejner, dá se namlouvat přes OpenAI — jde to tou
+samou proxy a GPU k tomu není potřeba:
+
+```yaml
+models:
+  tts: gpt-4o-mini-tts
+  tts_provider: openai      # slug poskytovatele v proxy
+episode:
+  voice: alloy              # alloy, nova, echo, …
+```
+
+Klíč agenta musí mít ten model v `allowed_models`. Deset minut mluvení vyjde na
+jednotky korun. Komerční API má strop na délku vstupu (OpenAI 4096 znaků), takže
+agent text rozdělí a kusy slepí — `tts.max_chars` to řídí.
+
+S vlastní službou nech `tts_provider` prázdné: pak jde celý díl **jedním
+dotazem** na lokální GPU službu a dělení textu si řeší ona sama (jinak by proxy
+mezi kusy pouštěla na kartu Ollamu).
 
 Tlačítko **celý díl** udělá obojí naráz. Běhy se řadí za sebe, protože si přes
 proxy sahají na jednu GPU.

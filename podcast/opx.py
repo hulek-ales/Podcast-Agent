@@ -116,14 +116,19 @@ class OpxClient:
         """Modely, které klíč přes proxy vidí: {"ollama": {...}, "<slug>": {...}}."""
         return self._call("GET", "/mgmt/v1/models")
 
-    def speak(self, model: str, text: str, voice=None, wait_s=None, **extra) -> bytes:
-        """Syntéza řeči přes GPU službu (docs/GPU-BACKEND.md). Vrátí audio bytes.
-        Proxy před tím uvolní Ollamu z VRAM a chat mezitím čeká — jeden díl = jeden dotaz."""
+    def speak(self, model: str, text: str, voice=None, wait_s=None, provider: str = "",
+              **extra) -> bytes:
+        """Syntéza řeči → audio bytes.
+
+        Bez `provider` jde dotaz na kořen proxy a ta ho podle modelu pošle lokální
+        GPU službě (uvolní kvůli němu Ollamu). S `provider` jde na komerční API
+        (`/providers/<slug>/v1/audio/speech`), které GPU nepotřebuje."""
         body = {"model": model, "input": text, **extra}
         if voice is not None:
             body["voice"] = voice
         headers = {"X-Opx-Wait": str(wait_s)} if wait_s is not None else None
-        audio, _ = self._raw("POST", "/v1/audio/speech", body, headers)
+        path = ("/providers/" + provider + "/v1/audio/speech") if provider else "/v1/audio/speech"
+        audio, _ = self._raw("POST", path, body, headers)
         return audio
 
     # --------------------------------------------------------- úlohy
