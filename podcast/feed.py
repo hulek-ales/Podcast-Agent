@@ -112,6 +112,8 @@ def build_feed(out_dir: str, cfg, token: str = "") -> str:
            desc=escape(channel["description"]), lang=escape(channel["language"]),
            now=format_datetime(datetime.now(timezone.utc)), author=escape(channel["author"]),
            image=image, items="\n".join(_item(m, base_url, token) for m in episodes))
+    # adresář pořadu nemusí existovat: feed se dá vyžádat dřív, než vznikne první díl
+    os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, "feed.xml")
     with open(path, "w", encoding="utf-8") as f:
         f.write(xml)

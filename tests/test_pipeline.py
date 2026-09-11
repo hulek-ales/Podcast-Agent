@@ -208,3 +208,14 @@ def test_local_tts_sends_whole_episode_at_once(tmp_path):
     text = "Věta. " * 100
     speak.synthesize(FakeOpx(), cfg, text, str(tmp_path / "dil.wav"))
     assert len(sent) == 1 and sent[0] == ("tts-cs", "", len(text))   # bez dělení, bez poskytovatele
+
+
+def test_feed_can_be_built_before_any_episode_exists(tmp_path):
+    """Čtečka si feed přidá dřív, než vznikne první díl — adresář ještě není."""
+    out = str(tmp_path / "public" / "prehled-dne")      # schválně neexistuje
+    cfg = Config({"output": {"base_url": "http://server:8089/prehled-dne"},
+                  "feed": {"title": "Přehled dne"}})
+    path = feed.build_feed(out, cfg, token="tajny")
+    xml = open(path, encoding="utf-8").read()
+    assert "<title>Přehled dne</title>" in xml and "<item>" not in xml   # platný, jen prázdný
+    assert feed.load_episodes(out) == []
