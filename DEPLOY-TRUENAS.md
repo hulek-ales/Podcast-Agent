@@ -58,9 +58,11 @@ vlastní (ne Docker Hub):
 app) → vlož [`TrueNasAPP.yaml`](TrueNasAPP.yaml). UI nečte `.env`, hodnoty uprav
 rovnou v YAML.
 
-**Bonus:** máš-li v Gitea runner pro Actions, může se image stavět sám po každém
-pushi do `main` — hotový workflow je v [`.gitea/workflows/docker.yaml`](.gitea/workflows/docker.yaml).
-Bez runneru se nic nestane, soubor jen leží v repu.
+**Aby se image stavěl sám** po každém pushi do `main`, potřebuješ v Gitea runner
+pro Actions — jednorázové nastavení, které pak slouží všem projektům:
+**[docs/GITEA-TRUENAS.md](docs/GITEA-TRUENAS.md)**. Workflow je už v repu
+([`.gitea/workflows/docker.yaml`](.gitea/workflows/docker.yaml)); bez runneru jen
+leží a nic nedělá.
 
 ## Varianta B: postavit image na NASu
 
