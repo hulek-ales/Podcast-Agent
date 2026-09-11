@@ -23,7 +23,8 @@ episode:
   max_age_hours: 24              # starší články se ignorují
   similarity: 0.80               # práh shlukování (víc = přísnější)
   fulltext: true                 # dotáhnout plný text u vybraných témat
-  temperature: 0.6
+  temperature: ""                # prázdné = neposílat; modely řady gpt-5 jinou
+                                 # než výchozí hodnotu odmítnou (HTTP 400)
   # předává se GPU službě:
   voice: jirka.wav               # referenční hlas (soubor ve službě)
   language: cs

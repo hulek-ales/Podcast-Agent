@@ -14,6 +14,8 @@ dostane syrové.
 import json
 import re
 
+from .opx import OpxError
+
 SYSTEM = (
     "Jsi scenárista rozhlasového zpravodajského přehledu. Ze shrnutí témat "
     "napíšeš souvislý text, který bude někdo číst nahlas.\n\n"
@@ -126,11 +128,20 @@ def build(opx, cfg, clusters: list, date_label: str) -> dict:
         topics=topics_block(clusters))
     provider = cfg.need("models.script_provider")
     model = cfg.need("models.script")
-    print("[scénář] " + provider + "/" + model + ", témat: " + str(len(clusters)), flush=True)
-    answer = opx.provider_chat(provider, model,
-                               [{"role": "system", "content": SYSTEM},
-                                {"role": "user", "content": prompt}],
-                               temperature=float(cfg.path("episode.temperature", 0.6)))
+    # temperature se posílá, jen když ji někdo vyplní: modely řady gpt-5 jinou než
+    # výchozí hodnotu odmítnou (HTTP 400) a díl by kvůli tomu nevznikl
+    extra = {}
+    temperature = cfg.path("episode.temperature")
+    if temperature not in (None, ""):
+        extra["temperature"] = float(temperature)
+    print("[scénář] " + provider + "/" + model + ", témat: " + str(len(clusters))
+          + (", temperature " + str(extra["temperature"]) if extra else ""), flush=True)
+    try:
+        answer = opx.provider_chat(provider, model,
+                                   [{"role": "system", "content": SYSTEM},
+                                    {"role": "user", "content": prompt}], **extra)
+    except OpxError as exc:
+        raise SystemExit("scénář selhal: " + str(exc) + hint(exc, extra))
     content = (answer.get("choices") or [{}])[0].get("message", {}).get("content", "")
     episode = parse_json(content)
     episode["intro"] = normalize_for_speech(episode.get("intro", ""))
@@ -144,6 +155,22 @@ def build(opx, cfg, clusters: list, date_label: str) -> dict:
         print("[scénář] pozor, číslice zůstaly v " + str(len(left)) + " větách (TTS je přečte po svém)",
               flush=True)
     return episode
+
+
+def hint(exc: OpxError, extra: dict) -> str:
+    """Rada k typickým odmítnutím, ať se nemusí luštit z odpovědi API."""
+    body = str(getattr(exc, "body", "") or exc).lower()
+    if "temperature" in body and extra.get("temperature") is not None:
+        return ("\n\nTenhle model bere jen výchozí temperature. Smaž `episode.temperature`"
+                " z konfigurace (nebo ji nech prázdnou) a spusť znovu s --resume.")
+    if "max_tokens" in body:
+        return "\n\nModel chce `max_completion_tokens` místo `max_tokens`."
+    if exc.status == 404:
+        return ("\n\nModel nebo poskytovatel v proxy neexistuje — zkontroluj"
+                " `models.script` a `models.script_provider` (`--check` je vypíše).")
+    if exc.status == 403:
+        return "\n\nKlíč tenhle model nemá v `allowed_models`."
+    return ""
 
 
 def spoken_text(episode: dict) -> str:

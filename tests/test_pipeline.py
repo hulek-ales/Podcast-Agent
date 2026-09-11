@@ -101,3 +101,47 @@ def test_config_paths():
     assert cfg.path("models.embed") == "nomic"
     assert cfg.path("models.chybi", "default") == "default"
     assert cfg.path("episode.style", "anchor") == "anchor"
+
+
+def test_temperature_is_sent_only_when_configured():
+    """Modely řady gpt-5 berou jen výchozí temperature — jinak HTTP 400."""
+    from podcast import script as script_mod
+    from podcast.opx import OpxError
+
+    class FakeOpx:
+        def __init__(self):
+            self.extra = None
+
+        def provider_chat(self, provider, model, messages, **extra):
+            self.extra = extra
+            return {"choices": [{"message": {"content": '{"title":"T","intro":"A.","segments":'
+                                                        '[{"title":"S","text":"B."}],"outro":"C."}'}}]}
+
+    clusters = [{"title": "Téma", "sources": ["ČT24"], "summary": "Něco se stalo.",
+                 "articles": [{"link": "https://x/1"}]}]
+    base = {"models": {"script": "gpt-5-mini", "script_provider": "openai"}, "episode": {}}
+
+    opx = FakeOpx()
+    cfg = Config({**base, "episode": {"temperature": ""}})
+    assert script_mod.build(opx, cfg, clusters, "11. září 2026")["title"] == "T"
+    assert opx.extra == {}                                   # prázdné = neposílat
+
+    opx = FakeOpx()
+    assert script_mod.build(opx, Config(base), clusters, "11. září 2026")
+    assert opx.extra == {}                                   # nevyplněné = taky neposílat
+
+    opx = FakeOpx()
+    cfg = Config({**base, "episode": {"temperature": 0.6}})
+    script_mod.build(opx, cfg, clusters, "11. září 2026")
+    assert opx.extra == {"temperature": 0.6}                 # vyplněné se pošle
+
+
+def test_hint_explains_common_rejections():
+    from podcast import script as script_mod
+    from podcast.opx import OpxError
+
+    err = OpxError(400, {"error": {"message": "Unsupported value: 'temperature' does not support 0.6"}})
+    assert "výchozí temperature" in script_mod.hint(err, {"temperature": 0.6})
+    assert script_mod.hint(OpxError(404, "no such provider"), {}).startswith("\n\nModel nebo poskytovatel")
+    assert "allowed_models" in script_mod.hint(OpxError(403, "not allowed"), {})
+    assert script_mod.hint(OpxError(500, "boom"), {}) == ""
