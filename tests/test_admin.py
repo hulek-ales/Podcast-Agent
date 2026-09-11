@@ -401,3 +401,114 @@ def test_admin_page_shows_feed_url(admin, episodes):
     page = client.get("/").text
     assert ("http://server:8089/feed.xml?token=" + state.feed_token()) in page
     assert "Hotových dílů: 1" in page
+
+
+# ------------------------------------ vystavení do internetu
+
+@pytest.fixture(autouse=True)
+def clean_attempts():
+    from podcast import auth
+    auth.reset_attempts()
+    yield
+    auth.reset_attempts()
+
+
+def test_brute_force_locks_the_address(admin, monkeypatch):
+    client, module = admin
+    from podcast import auth
+    fresh = TestClient(module.app)
+    monkeypatch.setattr(auth, "LOCK_AFTER", 3)
+    monkeypatch.setattr(auth, "LOCK_BASE_S", 60)
+
+    def message(response):
+        from urllib.parse import unquote
+        return unquote(response.headers["location"].partition("err=")[2])
+
+    for _ in range(3):                                  # LOCK_AFTER = 3
+        r = fresh.post("/login", data={"password": "hadam", "next": "/"}, follow_redirects=False)
+        assert message(r) == "Špatné heslo."
+    r = fresh.post("/login", data={"password": "hadam", "next": "/"}, follow_redirects=False)
+    assert message(r).startswith("Moc špatných pokusů")
+    # a ani správné heslo teď neprojde
+    r = fresh.post("/login", data={"password": PASSWORD, "next": "/"}, follow_redirects=False)
+    assert not fresh.cookies.get("podcast_admin")
+
+    auth.reset_attempts()                               # po vypršení zámku už ano
+    r = fresh.post("/login", data={"password": PASSWORD, "next": "/"}, follow_redirects=False)
+    assert fresh.cookies.get("podcast_admin")
+
+
+def test_successful_login_clears_attempts(admin, monkeypatch):
+    client, module = admin
+    from podcast import auth
+    fresh = TestClient(module.app)
+    fresh.post("/login", data={"password": "spatne", "next": "/"})
+    assert auth._attempts
+    fresh.post("/login", data={"password": PASSWORD, "next": "/"})
+    assert not auth._attempts
+
+
+def test_admin_can_be_limited_to_networks_but_feed_stays_open(admin, episodes, monkeypatch):
+    _, module = admin
+    from podcast import state
+    client = TestClient(module.app, client=("127.0.0.1", 50000))
+    client.post("/login", data={"password": PASSWORD, "next": "/"})
+    monkeypatch.setenv("PODCAST_ADMIN_ALLOW", "10.0.0.0/8, 192.168.0.0/16")
+    assert client.get("/").status_code == 403
+    assert client.get("/login").status_code == 403
+    assert client.post("/login", data={"password": PASSWORD}).status_code == 403
+    # feed chrání token, ten zůstává dostupný odkudkoli
+    assert client.get("/feed.xml?token=" + state.feed_token()).status_code == 200
+
+    monkeypatch.setenv("PODCAST_ADMIN_ALLOW", "127.0.0.0/8")
+    assert client.get("/").status_code == 200
+
+
+def test_forwarded_ip_is_trusted_only_behind_proxy(admin, monkeypatch):
+    client, module = admin
+    from podcast import auth
+
+    class Req:
+        headers = {"x-forwarded-for": "203.0.113.9, 10.0.0.1"}
+        client = type("C", (), {"host": "10.0.0.1"})()
+
+    monkeypatch.delenv("PODCAST_BEHIND_PROXY", raising=False)
+    assert auth.client_ip(Req()) == "10.0.0.1"          # hlavičce se nevěří
+    monkeypatch.setenv("PODCAST_BEHIND_PROXY", "1")
+    assert auth.client_ip(Req()) == "203.0.113.9"
+
+
+def test_security_headers_and_referrer_policy(admin, episodes):
+    client, _ = admin
+    from podcast import state
+    r = client.get("/")
+    assert r.headers["Referrer-Policy"] == "no-referrer"   # token v URL se nesmí vynést v Referer
+    assert r.headers["X-Frame-Options"] == "DENY"
+    assert r.headers["X-Content-Type-Options"] == "nosniff"
+    assert "frame-ancestors 'none'" in r.headers["Content-Security-Policy"]
+    assert "Strict-Transport-Security" not in r.headers   # po HTTP se HSTS neposílá
+
+    r = client.get("/feed.xml?token=" + state.feed_token())
+    assert r.headers["Cache-Control"] == "private, max-age=0"
+
+
+def test_https_behind_proxy_marks_cookie_secure(admin, monkeypatch):
+    client, module = admin
+    monkeypatch.setenv("PODCAST_BEHIND_PROXY", "1")
+    fresh = TestClient(module.app)
+    r = fresh.post("/login", data={"password": PASSWORD, "next": "/"},
+                   headers={"X-Forwarded-Proto": "https"}, follow_redirects=False)
+    cookie = r.headers["set-cookie"]
+    assert "Secure" in cookie and "HttpOnly" in cookie and "SameSite=lax" in cookie
+    r = fresh.get("/", headers={"X-Forwarded-Proto": "https"})
+    assert r.headers["Strict-Transport-Security"].startswith("max-age=31536000")
+
+
+def test_weak_password_is_reported(monkeypatch):
+    from podcast import auth
+    monkeypatch.setenv("PODCAST_ADMIN_PASSWORD", "heslo")
+    assert "hádají" in auth.weak_password()             # hádatelné se pozná dřív než krátké
+    monkeypatch.setenv("PODCAST_ADMIN_PASSWORD", "Xk3-nahodne")
+    assert "znaků" in auth.weak_password()
+    monkeypatch.setenv("PODCAST_ADMIN_PASSWORD", "dost-dlouhe-a-nahodne-heslo")
+    assert auth.weak_password() == ""

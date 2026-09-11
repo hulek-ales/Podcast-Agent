@@ -18,6 +18,10 @@ services:
       PODCAST_ADMIN_PASSWORD: "${PODCAST_ADMIN_PASSWORD:?nastav heslo do administrace}"
       PODCAST_FEED_TOKEN: "${PODCAST_FEED_TOKEN:-}"  # prázdné = vyrobí se samo a ukáže v administraci
       ADMIN_PORT: "8089"
+      # --- vystavení do internetu (viz README) ---
+      PODCAST_BEHIND_PROXY: "${PODCAST_BEHIND_PROXY:-}"   # 1 = věřit X-Forwarded-For/-Proto od proxy
+      TRUSTED_PROXY_IPS: "${TRUSTED_PROXY_IPS:-127.0.0.1}"  # adresa té reverzní proxy
+      PODCAST_ADMIN_ALLOW: "${PODCAST_ADMIN_ALLOW:-}"    # sítě, odkud smí administrace; prázdné = odkudkoli
     ports:
       - "${ADMIN_PORT:-8089}:8089"      # administrace + feed
     volumes:

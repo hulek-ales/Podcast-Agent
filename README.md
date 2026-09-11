@@ -111,8 +111,88 @@ Token se vyrobí sám při prvním spuštění a leží v `state.json` (práva 6
 vlastní si můžeš vynutit přes `PODCAST_FEED_TOKEN`.
 
 **Token v URL má svoje meze:** objeví se v logu reverzní proxy i v historii
-prohlížeče. Pro domácí feed je to standardní řešení (takhle fungují i placené
-privátní podcasty), ale do internetu tohle bez další vrstvy nedávej.
+prohlížeče. Je to standardní řešení pro privátní podcasty (takhle fungují
+i placené), ale počítej s tím, že kdo se k adrese dostane, má i díly.
+
+## Vystavení do internetu
+
+Feed má smysl mít dostupný i mimo domov, jinak si epizodu nestáhneš na cestě.
+Aplikace na to je připravená, ale pár věcí musíš nastavit ty.
+
+### Co udělá aplikace sama
+
+- **Zamykání po špatných heslech.** Od pátého pokusu se adresa zamkne na 30 s
+  a každý další pokus dobu zdvojnásobí (max hodina). Neúspěchy jdou do logu
+  i s adresou.
+- **Bezpečnostní hlavičky** na každé odpovědi: `Referrer-Policy: no-referrer`
+  (jinak by prohlížeč vynesl token z URL v `Referer`), `X-Frame-Options: DENY`,
+  `X-Content-Type-Options: nosniff`, přísné CSP a u feedu `Cache-Control: private`.
+- **Cookie jen po HTTPS** (`Secure`), jakmile aplikace za HTTPS běží, a HSTS.
+- **Varování u slabého hesla** při startu.
+
+### Co musíš nastavit
+
+```yaml
+environment:
+  PODCAST_BEHIND_PROXY: "1"            # věřit X-Forwarded-For/-Proto
+  TRUSTED_PROXY_IPS: "172.16.0.5"      # adresa tvé reverzní proxy, NE "*"
+  PODCAST_ADMIN_ALLOW: "192.168.1.0/24"  # administrace jen z domova (feed zůstává venku)
+  PODCAST_ADMIN_PASSWORD: "…"          # dlouhé a náhodné, aspoň 12 znaků
+```
+
+`PODCAST_ADMIN_ALLOW` je ta nejúčinnější věc: **feed ven, administrace ne.**
+Klíče k proxy spravuješ z domova a z internetu je vidět jen `/feed.xml`
+a `/media/…`, kde je co ztratit nesrovnatelně míň. Prázdná hodnota = odkudkoli.
+
+`TRUSTED_PROXY_IPS` nedávej na `*`. S tím by si `X-Forwarded-For` vymyslel
+kdokoli, obešel tím zamykání i omezení sítí.
+
+### Reverzní proxy
+
+Caddy (certifikáty řeší sám):
+
+```
+podcast.example.cz {
+    reverse_proxy podcast-agent:8089
+}
+```
+
+nginx:
+
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name podcast.example.cz;
+    # ssl_certificate …;
+
+    location / {
+        proxy_pass http://podcast-agent:8089;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+Chceš-li administraci nechat mimo internet i na úrovni proxy (pásek navíc
+k `PODCAST_ADMIN_ALLOW`), pusť ven jen feed:
+
+```nginx
+    location ~ ^/(feed\.xml|media/) { proxy_pass http://podcast-agent:8089; }
+    location / { return 404; }
+```
+
+A do `output.base_url` dej veřejnou adresu (`https://podcast.example.cz`),
+jinak budou odkazy ve feedu ukazovat do LAN a telefon si venku nic nestáhne.
+
+### Na co si dát pozor
+
+- **Token se dostane do logů** reverzní proxy. Když ti to vadí, loguj bez
+  query řetězce (`log_format` bez `$query_string`).
+- **Po změně veřejné adresy** přegeneruj token a přidej feed v telefonu znovu —
+  staré URL by ukazovala jinam.
+- **Aktualizace.** Vystavená aplikace chce občas `docker compose build --pull`,
+  ať má záplatovaný základ.
 
 ## Kroky zvlášť
 

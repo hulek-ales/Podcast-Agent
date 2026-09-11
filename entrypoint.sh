@@ -15,8 +15,18 @@ fi
 # Web = administrace (heslo) + feed s díly (token). Bez hesla neběží ani jedno,
 # ať se hotové díly nikdy nevystaví bez ověření.
 if [ -n "$PODCAST_ADMIN_PASSWORD" ]; then
+  python -c "
+from podcast import auth
+problem = auth.weak_password()
+print('[start] POZOR: ' + problem if problem else '[start] heslo administrace vypadá rozumně')
+"
   echo "[start] web na portu ${ADMIN_PORT:-8089} (administrace + feed)"
-  uvicorn podcast.admin:app --host 0.0.0.0 --port "${ADMIN_PORT:-8089}" &
+  # --proxy-headers: za reverzní proxou je skutečná adresa v X-Forwarded-For.
+  # --forwarded-allow-ips nastav na adresu té proxy, ne na '*', jinak si hlavičku
+  # může vymyslet kdokoli a obejít zamykání po špatných heslech.
+  uvicorn podcast.admin:app --host 0.0.0.0 --port "${ADMIN_PORT:-8089}" \
+    --no-server-header \
+    ${PODCAST_BEHIND_PROXY:+--proxy-headers --forwarded-allow-ips="${TRUSTED_PROXY_IPS:-127.0.0.1}"} &
 else
   echo "[start] web neběží: chybí PODCAST_ADMIN_PASSWORD (feed ani administrace nejsou dostupné)"
 fi

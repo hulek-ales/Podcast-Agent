@@ -28,6 +28,25 @@ from .opx import OpxClient, OpxError
 app = FastAPI(title="Podcast agent", docs_url=None, redoc_url=None, openapi_url=None)
 
 
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    """Hlavičky pro aplikaci vystavenou do internetu. `no-referrer` je tu
+    nejdůležitější: token feedu je v URL a bez ní by ho prohlížeč poslal
+    v Referer každé stránce, na kterou by se odsud odkázalo."""
+    response = await call_next(request)
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; "
+        "base-uri 'none'; frame-ancestors 'none'")
+    if request.url.path.startswith(("/feed", "/media")):
+        response.headers["Cache-Control"] = "private, max-age=0"
+    if auth.is_https(request):
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
+
+
 # ----------------------------------------------------------- přihlášení
 
 def session_of(request: Request) -> str:
@@ -35,9 +54,11 @@ def session_of(request: Request) -> str:
 
 
 def require(request: Request) -> str:
-    """Vrátí token sezení, nebo skončí: 503 bez hesla, 401 bez přihlášení."""
+    """Vrátí token sezení, nebo skončí: 503 bez hesla, 403 z cizí sítě, 401 bez přihlášení."""
     if not auth.enabled():
         raise HTTPException(503, "administrace je vypnutá: chybí PODCAST_ADMIN_PASSWORD")
+    if not auth.admin_allowed(auth.client_ip(request)):
+        raise HTTPException(403, "administrace je dostupná jen z povolených sítí")
     token = session_of(request)
     if not auth.valid_session(token):
         raise HTTPException(401, "přihlaš se")
@@ -233,6 +254,8 @@ def healthz():
 def login_form(request: Request, err: str = ""):
     if not auth.enabled():
         raise HTTPException(503, "administrace je vypnutá: chybí PODCAST_ADMIN_PASSWORD")
+    if not auth.admin_allowed(auth.client_ip(request)):
+        raise HTTPException(403, "administrace je dostupná jen z povolených sítí")
     if auth.valid_session(session_of(request)):
         return RedirectResponse("/", status_code=303)
     return HTMLResponse(LOGIN_PAGE.format(
@@ -242,16 +265,31 @@ def login_form(request: Request, err: str = ""):
 
 @app.post("/login")
 def login(request: Request, password: str = Form(""), next: str = Form("/")):
+    from urllib.parse import quote
     if not auth.enabled():
         raise HTTPException(503, "administrace je vypnutá: chybí PODCAST_ADMIN_PASSWORD")
+    ip = auth.client_ip(request)
+    if not auth.admin_allowed(ip):
+        raise HTTPException(403, "administrace je dostupná jen z povolených sítí")
+
+    locked = auth.locked_for(ip)
+    if locked:
+        return RedirectResponse("/login?err=" + quote(
+            "Moc špatných pokusů. Zkus to za " + str(locked) + " s."), status_code=303)
+
     if not auth.check_password(password):
         import time
         time.sleep(1.0)                      # brzda proti hádání hesla
-        return RedirectResponse("/login?err=" + "Špatné heslo.", status_code=303)
+        seconds = auth.note_failure(ip)
+        print("[auth] špatné heslo z " + ip + (", zamykám na " + str(seconds) + " s" if seconds else ""),
+              flush=True)
+        return RedirectResponse("/login?err=" + quote("Špatné heslo."), status_code=303)
+
+    auth.note_success(ip)
     target = next if next.startswith("/") and not next.startswith("//") else "/"
     resp = RedirectResponse(target, status_code=303)
     resp.set_cookie(auth.COOKIE, auth.make_session(), httponly=True, samesite="lax",
-                    max_age=auth.TTL, path="/")
+                    secure=auth.is_https(request), max_age=auth.TTL, path="/")
     return resp
 
 
