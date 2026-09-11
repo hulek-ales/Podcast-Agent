@@ -45,10 +45,9 @@ docker compose restart podcast-agent
 docker compose logs podcast-agent | grep -A 3 HESLO    # heslo do administrace
 ```
 
-Na TrueNAS SCALE: **[DEPLOY-TRUENAS.md](DEPLOY-TRUENAS.md)** (Apps neumí stavět
-image, takže se bere z registry v Gitea nebo se postaví po SSH). Jak si jednou
-nastavit, aby se image stavěl sám po pushi — a stejně to fungovalo i u dalších
-projektů: **[docs/GITEA-TRUENAS.md](docs/GITEA-TRUENAS.md)**.
+Na TrueNAS SCALE: **[DEPLOY-TRUENAS.md](DEPLOY-TRUENAS.md)**. Apps neumí stavět
+image, takže ho staví GitHub Actions a TrueNAS si ho bere z GHCR — jak to zapojit
+jednou pro všechny projekty: **[docs/DEPLOY-CI.md](docs/DEPLOY-CI.md)**.
 
 Adresu feedu i s tokenem pak najdeš v administraci na `http://server:8089`.
 

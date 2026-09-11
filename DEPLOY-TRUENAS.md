@@ -21,48 +21,27 @@ postav lokálně a použij `pull_policy: never`.
 Když ve výpisu vidíš `podcast-web Pulled`, pouštíš **starý compose** s nginxem;
 ten už v repu není — stáhni si aktuální `main`.
 
-## Varianta A: registry v Gitea (doporučeno)
+## Varianta A: GitHub Actions + GHCR (doporučeno)
 
-Gitea umí registry kontejnerů na stejné adrese jako Git, takže si image můžeš
-pushnout k sobě a TrueNAS ho odtamtud bere jako z Docker Hubu. Aktualizace je
-pak `docker push` + restart appky, žádné SSH na NAS.
+Image staví GitHub na svých strojích, TrueNAS si ho stáhne z GHCR. Doma neběží
+žádný build server a přihlášení k registry se v TrueNASu nastavuje **jednou pro
+všechny appky**. Celý postup i s limity Free plánu: **[docs/DEPLOY-CI.md](docs/DEPLOY-CI.md)**.
 
-**1. Token na balíčky.** V Gitea (účet `claude-bot`) → Nastavení → Aplikace →
-nový token s oprávněním **`package: čtení i zápis`**. Ten na repozitáře nestačí.
+Ve zkratce:
 
-**2. Postavit a pushnout** (odkudkoli, kde je Docker — klidně z tvého počítače):
+1. Repo na GitHubu (soukromé), workflow už je v repu:
+   [`.github/workflows/docker.yml`](.github/workflows/docker.yml). Nic se v něm
+   nenastavuje.
+2. GitHub → classic PAT s `read:packages` + `repo`.
+3. TrueNAS → Apps → Configuration → Manage Container Images → Docker Registries
+   → Add: URI `https://ghcr.io`, uživatel a ten PAT.
+4. Apps → Discover Apps → **Install via YAML** → vlož
+   [`TrueNasAPP.yaml`](TrueNasAPP.yaml). UI nečte `.env`, hodnoty uprav v YAML.
 
-```bash
-git clone https://claude-bot:TOKEN@git.aleshulek.cz/Podcast_AI_Agent/Agent_app.git
-cd Agent_app
-docker login git.aleshulek.cz -u claude-bot            # heslo = ten token
-docker build -t git.aleshulek.cz/podcast_ai_agent/agent-app:latest .
-docker push git.aleshulek.cz/podcast_ai_agent/agent-app:latest
-```
-
-Jméno vlastníka v cestě musí být **malými písmeny** (`podcast_ai_agent`), i když
-se organizace jmenuje `Podcast_AI_Agent`. Balíček se pak objeví v Gitea →
-organizace → Packages.
-
-**3. Přidat registry do TrueNASu.** Apps → Configuration → Manage Container
-Images → Docker Registries → Add. V dialogu, co jsi poslal, rozbal **URI** a vyber
-vlastní (ne Docker Hub):
-
-| pole | hodnota |
-|---|---|
-| URI | `https://git.aleshulek.cz` |
-| Username | `claude-bot` |
-| Password | ten token s oprávněním `package` |
-
-**4. Nainstalovat appku.** Apps → Discover Apps → **Install via YAML** (custom
-app) → vlož [`TrueNasAPP.yaml`](TrueNasAPP.yaml). UI nečte `.env`, hodnoty uprav
-rovnou v YAML.
-
-**Aby se image stavěl sám** po každém pushi do `main`, potřebuješ v Gitea runner
-pro Actions — jednorázové nastavení, které pak slouží všem projektům:
-**[docs/GITEA-TRUENAS.md](docs/GITEA-TRUENAS.md)**. Workflow je už v repu
-([`.gitea/workflows/docker.yaml`](.gitea/workflows/docker.yaml)); bez runneru jen
-leží a nic nedělá.
+Zůstáváš-li u Gitea, funguje totéž s jejím registry — v `TrueNasAPP.yaml` přepiš
+řádek `image:` a v TrueNASu přidej `https://git.aleshulek.cz` s tokenem, který má
+oprávnění `package`. Aby se tam image stavěl sám, potřebuješ vlastní runner; proč
+to nedoporučuju, je v [docs/DEPLOY-CI.md](docs/DEPLOY-CI.md).
 
 ## Varianta B: postavit image na NASu
 
@@ -110,7 +89,7 @@ docker cp ./config.yaml podcast-agent:/data/config.yaml
 
 | varianta | postup |
 |---|---|
-| registry | `docker build … && docker push …`, pak Apps → podcast-agent → Restart |
+| GHCR | `git push` → Actions postaví image → Apps → podcast-agent → Restart |
 | lokální image | `git pull && docker build -t podcast-agent:latest .`, pak Restart |
 | self-update | vyplň `REPO_URL`, `GIT_USER`, `GIT_TOKEN` (token jen pro čtení) — kontejner si při každém restartu udělá `git pull` a doinstaluje závislosti; přestavba je pak nutná jen při změně `Dockerfile` |
 

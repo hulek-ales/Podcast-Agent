@@ -1,17 +1,19 @@
 # Compose pro TrueNAS SCALE → Apps → Discover Apps → Install via YAML (custom app).
 #
-# Image se bere z registry v Gitea (Gitea umí registry kontejnerů na stejné
-# adrese jako Git). V TrueNASu musí být ta registry přidaná:
+# Image staví GitHub Actions a leží v GHCR (soukromý balíček u soukromého repa).
+# V TrueNASu stačí JEDNOU přidat přihlášení ke ghcr.io a platí pro všechny appky:
 #   Apps → Configuration → Manage Container Images → Docker Registries → Add
-#   URI: https://git.aleshulek.cz   Username: claude-bot   Password: <token s package>
+#   URI: https://ghcr.io   Username: <GitHub jméno>   Password: <classic PAT: read:packages + repo>
 #
-# Jak image postavit a pushnout: DEPLOY-TRUENAS.md
+# Celý postup: docs/DEPLOY-CI.md
+# Pro registry v Gitea místo GHCR stačí přepsat řádek image: na
+#   git.aleshulek.cz/podcast_ai_agent/agent-app:latest
 #
 # Hesla ani klíče tu nejsou schválně — heslo do administrace se vyrobí při
 # prvním startu a najdeš ho v logu appky, klíč k proxy zadáš v administraci.
 services:
   podcast-agent:
-    image: git.aleshulek.cz/podcast_ai_agent/agent-app:latest
+    image: ghcr.io/hulek-ales/podcast-agent:latest
     pull_policy: always
     container_name: podcast-agent
     restart: unless-stopped
@@ -26,7 +28,7 @@ services:
       TRUSTED_PROXY_IPS: 127.0.0.1    # adresa té reverzní proxy, NE '*'
       PODCAST_ADMIN_ALLOW: ''         # např. 192.168.1.0/24 = administrace jen z domova
       # --- self-update z Gitu (nepovinné, když nechceš přestavovat image) ---
-      REPO_URL: ''             # https://git.aleshulek.cz/Podcast_AI_Agent/Agent_app.git
+      REPO_URL: ''             # nepovinné, když nechceš přestavovat image
       REPO_BRANCH: main
       GIT_USER: claude-bot
       GIT_TOKEN: ''            # token jen pro čtení (repository: Přečtené)

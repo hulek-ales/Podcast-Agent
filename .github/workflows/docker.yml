@@ -1,0 +1,35 @@
+# Postaví image a pushne ho do GHCR po každém pushi do main.
+# Build běží na strojích GitHubu — doma není potřeba žádný runner.
+# GITHUB_TOKEN se doplní sám, nic se nenastavuje.
+#
+# Balíček zdědí soukromí repozitáře. TrueNAS ho stáhne, když má jednou přidané
+# přihlášení ke ghcr.io (viz docs/DEPLOY-CI.md).
+name: docker
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # jen :latest — každý commit jako vlastní tag by snědl 500 MB kvóty
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/${{ github.repository }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

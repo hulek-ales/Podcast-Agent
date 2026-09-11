@@ -1,0 +1,15 @@
+# Menší build kontext = rychlejší build a menší přenos z registry.
+.git
+.gitea
+.github
+.pytest_cache
+__pycache__/
+*.pyc
+tests/
+work/
+out/
+config.yaml
+keys.json
+state.json
+*.md
+.venv/
