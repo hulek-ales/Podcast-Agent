@@ -2,12 +2,21 @@
 # Bez RUN_AT vyrobí díl hned a skončí (hodí se na ladění i na cron zvenku).
 # S RUN_AT=03:10 zůstane běžet a spustí se každý den v ten čas — žádný cron
 # démon v kontejneru, jen spánek do dalšího termínu.
+# S PODCAST_ADMIN_PASSWORD navíc běží administrace klíčů na ADMIN_PORT.
 set -e
 
-if [ ! -f "${PODCAST_CONFIG:-/data/config.yaml}" ]; then
-  echo "[start] chybí ${PODCAST_CONFIG:-/data/config.yaml}, kopíruji vzor — uprav ho a restartuj"
-  cp /app/config.example.yaml "${PODCAST_CONFIG:-/data/config.yaml}"
+CONFIG="${PODCAST_CONFIG:-/data/config.yaml}"
+if [ ! -f "$CONFIG" ]; then
+  echo "[start] chybí $CONFIG, kopíruji vzor — uprav ho a restartuj"
+  cp /app/config.example.yaml "$CONFIG"
   exit 1
+fi
+
+if [ -n "$PODCAST_ADMIN_PASSWORD" ]; then
+  echo "[start] administrace na portu ${ADMIN_PORT:-8089}"
+  uvicorn podcast.admin:app --host 0.0.0.0 --port "${ADMIN_PORT:-8089}" &
+elif [ -n "$ADMIN_PORT" ]; then
+  echo "[start] administrace vypnutá: chybí PODCAST_ADMIN_PASSWORD"
 fi
 
 run() {
@@ -17,6 +26,8 @@ run() {
 
 if [ -z "$RUN_AT" ]; then
   run
+  # s administrací zůstat naživu, ať se dá po prvním běhu doladit klíč
+  [ -n "$PODCAST_ADMIN_PASSWORD" ] && wait
   exit 0
 fi
 

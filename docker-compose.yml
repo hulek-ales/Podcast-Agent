@@ -13,7 +13,11 @@ services:
       TZ: Europe/Prague
       RUN_AT: "${RUN_AT:-03:10}"        # prázdné = vyrobit díl hned a skončit
       PODCAST_PROXY_URL: "${PODCAST_PROXY_URL:-http://ollama-proxy:11435}"
-      PODCAST_PROXY_KEY: "${PODCAST_PROXY_KEY:-}"   # klíč opx_… raději sem než do config.yaml
+      PODCAST_PROXY_KEY: "${PODCAST_PROXY_KEY:-}"   # klíč opx_… — nebo ho přidej v administraci
+      PODCAST_ADMIN_PASSWORD: "${PODCAST_ADMIN_PASSWORD:-}"  # prázdné = administrace neběží
+      ADMIN_PORT: "8089"
+    ports:
+      - "${ADMIN_PORT:-8089}:8089"      # administrace klíčů — jen do domácí sítě!
     volumes:
       - podcast_data:/data              # config.yaml + work/ — ven se nedostane
       - podcast_out:/data/public        # hotové díly a feed.xml

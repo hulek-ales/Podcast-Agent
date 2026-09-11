@@ -16,7 +16,7 @@ import sys
 from datetime import datetime
 
 from . import cluster, collect, config, feed, script, speak, summarize
-from .opx import OpxClient, OpxError
+from .opx import OpxError
 
 STEPS = ("collect", "cluster", "summarize", "script", "speak", "feed")
 CZ_MONTHS = ("ledna", "února", "března", "dubna", "května", "června", "července",
@@ -74,8 +74,7 @@ def check(opx, cfg) -> int:
 
 def run(cfg, steps: tuple, resume: bool, day: datetime) -> int:
     slug = day.strftime("%Y-%m-%d")
-    opx = OpxClient(cfg.need("proxy.url"), cfg.need("proxy.key"),
-                    timeout=float(cfg.path("proxy.timeout_s", 900)))
+    opx = config.client(cfg)
     work = Work(cfg.path("output.work_dir", "work"), slug, resume)
     out_dir = cfg.path("output.dir", "out")
 
@@ -151,8 +150,7 @@ def main(argv=None) -> int:
 
     cfg = config.load(args.config)
     if args.check:
-        opx = OpxClient(cfg.need("proxy.url"), cfg.need("proxy.key"))
-        return check(opx, cfg)
+        return check(config.client(cfg), cfg)
 
     steps = tuple(s.strip() for s in args.steps.split(",") if s.strip())
     unknown = [s for s in steps if s not in STEPS]

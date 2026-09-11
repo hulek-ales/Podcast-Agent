@@ -39,17 +39,47 @@ python -m podcast.run                  # vyrobí díl
 V Dockeru (vedle proxy, síť `ollamaNet`):
 
 ```bash
-PODCAST_PROXY_KEY=opx_… docker compose up -d --build
+PODCAST_ADMIN_PASSWORD=… docker compose up -d --build
 # poprvé se do svazku zkopíruje vzor konfigurace a kontejner skončí — uprav ji a restartuj
 docker compose restart podcast-agent
 ```
 
 Feed pak přidáš v AntennaPodu jako `http://server:8088/feed.xml`.
 
-## Klíč pro agenta
+## Klíče k proxy a administrace
 
-V proxy (GUI → API klíče) vytvoř klíč role `client` a povol mu jen to, co
-používá — agent se pak k ničemu jinému nedostane:
+Klíč je tajemství, takže nepatří do `config.yaml`, který se verzuje. Agent má
+na správu klíčů vlastní stránku:
+
+```bash
+PODCAST_ADMIN_PASSWORD=… uvicorn podcast.admin:app --host 0.0.0.0 --port 8089
+```
+
+V Dockeru naběhne sama, jakmile je `PODCAST_ADMIN_PASSWORD` vyplněné
+(`http://server:8089`, přihlášení `admin` + to heslo). Umí:
+
+- **přidat** klíč `opx_…`, pojmenovat ho a případně mu dát vlastní adresu proxy;
+- **otestovat** ho — vypíše, které modely s ním agent uvidí a který z potřebných
+  mu chybí, takže nemusíš hádat, proč běh spadl na 403;
+- **přepínat** mezi uloženými klíči (denní, testovací, starý před rotací) a mazat je;
+- **nechat proxy vyrobit nový klíč** pro agenta: vložíš svůj *admin* klíč, ona z něj
+  udělá klíč role `client` omezený přesně na modely z konfigurace. Admin klíč se
+  nikam neuloží, použije se jednou a zapomene.
+
+Klíče leží v `keys.json` vedle konfigurace s právy 600 a na stránce se ukazují jen
+maskované (`opx_denni_…`).
+
+**Odkud se bere klíč**, když je jich víc (první, který existuje, vyhrává):
+
+1. aktivní klíč z administrace,
+2. `PODCAST_PROXY_KEY` z prostředí,
+3. `proxy.key` v `config.yaml`.
+
+Když nastavíš klíč v administraci a v compose zůstane starý, platí ten z administrace
+— stránka na to upozorní, ať to není záhada. `python -m podcast.run --check` vypíše,
+odkud klíč přišel.
+
+Ať děláš klíč ručně nebo přes tlačítko, omez ho jen na to, co agent používá:
 
 ```
 allowed_models: nomic-embed-text, gemma4:12b, gpt-5-mini, tts-cs
@@ -57,7 +87,8 @@ max_jobs: 50        strop čekajících úloh
 rate_per_min: 60
 ```
 
-Klíč dej do `PODCAST_PROXY_KEY`, ne do `config.yaml` — konfigurace se verzuje.
+**Administrace patří jen do domácí sítě.** Zobrazuje a vyrábí klíče k proxy; bez
+hesla v `PODCAST_ADMIN_PASSWORD` vůbec nenaběhne, ale port nevystavuj do internetu.
 
 ## Kroky zvlášť
 

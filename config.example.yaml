@@ -1,9 +1,12 @@
-# Zkopíruj na config.yaml a uprav. Klíč se dá místo souboru dát do prostředí
-# (PODCAST_PROXY_KEY), což je lepší, když config verzuješ.
+# Zkopíruj na config.yaml a uprav.
+#
+# Klíč sem psát nemusíš: přidej ho v administraci (uloží se do keys.json vedle
+# tohohle souboru, práva 600) nebo do PODCAST_PROXY_KEY. Pořadí, ve kterém se
+# hledá: administrace → prostředí → tenhle soubor.
 
 proxy:
   url: http://ollama-proxy:11435
-  key: opx_zmen_me
+  key: ""                        # raději nech prázdné, viz výše
   timeout_s: 900
 
 models:

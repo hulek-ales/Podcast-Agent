@@ -13,5 +13,6 @@ RUN chmod +x /app/entrypoint.sh
 # /data = konfigurace, hotové díly, mezivýsledky (volume)
 ENV PODCAST_CONFIG=/data/config.yaml
 VOLUME ["/data"]
+EXPOSE 8089
 
 ENTRYPOINT ["/app/entrypoint.sh"]
