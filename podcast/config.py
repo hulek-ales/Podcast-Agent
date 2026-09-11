@@ -1,20 +1,20 @@
 """Konfigurace z YAML (config.yaml vedle kódu, nebo PODCAST_CONFIG).
 
-Adresa a klíč proxy se hledají ve třech místech, v tomhle pořadí:
+Adresa a klíč proxy se hledají takhle, první nalezené vyhrává:
 
-  1. aktivní klíč z administrace (keys.json) — poslední vědomá volba člověka,
-  2. prostředí (PODCAST_PROXY_KEY / PODCAST_PROXY_URL) — obvykle z compose,
+  1. administrace — aktivní klíč (keys.json) a adresa uložená ve state.json,
+  2. prostředí (PODCAST_PROXY_KEY / PODCAST_PROXY_URL),
   3. config.yaml.
 
-Proto přepnutí klíče v administraci zabere i tam, kde je v compose vyplněný
-starý; administrace na to upozorní, ať není záhada, který klíč vlastně platí.
+Administrace je schválně první: je to poslední vědomá volba člověka. Stránka
+ukáže, odkud hodnota přišla, ať není záhada, co vlastně platí.
 """
 
 import os
 
 import yaml
 
-from . import keys
+from . import keys, state
 
 def default_path() -> str:
     """Čte se při každém volání, ne při importu — jinak by se prostředí
@@ -52,10 +52,13 @@ def proxy_key(cfg: Config = None):
 
 
 def proxy_url(cfg: Config = None):
-    """Adresa proxy stejnou cestou; u klíče z administrace může mít vlastní."""
+    """Adresa proxy: vlastní u aktivního klíče, jinak globální z administrace."""
     entry = keys.active()
     if entry.get("url"):
-        return entry["url"], "administrace (" + entry["name"] + ")"
+        return entry["url"], "administrace (klíč " + entry["name"] + ")"
+    saved = state.load().get("proxy_url", "")
+    if saved:
+        return saved, "administrace"
     if os.environ.get("PODCAST_PROXY_URL"):
         return os.environ["PODCAST_PROXY_URL"], "prostředí PODCAST_PROXY_URL"
     value = (cfg or Config()).path("proxy.url", "")

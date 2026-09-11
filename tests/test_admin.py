@@ -34,8 +34,11 @@ def store(tmp_path, monkeypatch):
 @pytest.fixture
 def admin(store, monkeypatch):
     """Přihlášený klient administrace (sezení v cookie) + modul kvůli CSRF."""
-    monkeypatch.setenv("PODCAST_ADMIN_PASSWORD", PASSWORD)
+    from podcast import auth
+    monkeypatch.delenv("PODCAST_ADMIN_PASSWORD", raising=False)
     monkeypatch.delenv("PODCAST_FEED_TOKEN", raising=False)
+    monkeypatch.delenv("PODCAST_ADMIN_ALLOW", raising=False)
+    auth.set_password(PASSWORD)
     from podcast import admin as module
     importlib.reload(module)
     client = TestClient(module.app)
@@ -108,7 +111,7 @@ def test_url_from_key_entry(store):
     cfg = config.load()
     assert config.proxy_url(cfg) == ("http://proxy.test:11435", "config.yaml")
     keys.add("jina", "opx_aaaaaaaaaaaa", url="http://jinde:11435")
-    assert config.proxy_url(cfg) == ("http://jinde:11435", "administrace (jina)")
+    assert config.proxy_url(cfg) == ("http://jinde:11435", "administrace (klíč jina)")
 
 
 def test_client_refuses_without_key(store, monkeypatch):
@@ -197,12 +200,81 @@ def test_csrf_required(admin):
     assert r.status_code == 400 and keys.load() == []
 
 
-def test_admin_disabled_without_password(store, monkeypatch):
+def test_admin_disabled_until_password_exists(store, monkeypatch):
+    """Bez uloženého hesla se nedá nic; bootstrap ho vyrobí a vypíše jednou."""
     monkeypatch.delenv("PODCAST_ADMIN_PASSWORD", raising=False)
-    from podcast import admin as module
+    from podcast import admin as module, auth
     importlib.reload(module)
     with TestClient(module.app) as client:
         assert client.get("/").status_code == 503
+        assert client.get("/login").status_code == 503
+
+        generated = auth.bootstrap()
+        assert len(generated) >= 20 and auth.check_password(generated)
+        assert auth.bootstrap() == ""                  # podruhé už nic nevyrábí
+        r = client.post("/login", data={"password": generated}, follow_redirects=False)
+        assert r.status_code == 303 and client.cookies.get("podcast_admin")
+
+
+def test_bootstrap_uses_env_password_when_given(store, monkeypatch):
+    monkeypatch.setenv("PODCAST_ADMIN_PASSWORD", "z-prostredi-dlouhe")
+    from podcast import auth
+    assert auth.bootstrap() == ""                      # nic nevypisuje, vzalo prostředí
+    assert auth.check_password("z-prostredi-dlouhe")
+
+
+def test_password_is_stored_hashed(store):
+    from podcast import auth, state
+    auth.set_password("tajne-heslo-navic")
+    stored = state.load()["admin_password"]
+    assert stored.startswith("pbkdf2$") and "tajne-heslo-navic" not in stored
+    assert auth.check_password("tajne-heslo-navic") and not auth.check_password("jine")
+
+
+def test_change_password_in_ui_logs_out(admin):
+    client, module = admin
+    from podcast import auth
+    token = csrf(client)
+
+    r = client.post("/settings/password", data={"csrf": token, "current": "spatne",
+                                                "new1": "nove-dlouhe-heslo", "new2": "nove-dlouhe-heslo"},
+                    follow_redirects=False)
+    assert "err=" in r.headers["location"] and auth.check_password(PASSWORD)
+
+    r = client.post("/settings/password", data={"csrf": token, "current": PASSWORD,
+                                                "new1": "nove-dlouhe-heslo", "new2": "jine"},
+                    follow_redirects=False)
+    assert "neshoduj" in r.headers["location"] or "err=" in r.headers["location"]
+
+    r = client.post("/settings/password", data={"csrf": token, "current": PASSWORD,
+                                                "new1": "kratke", "new2": "kratke"},
+                    follow_redirects=False)
+    assert "err=" in r.headers["location"] and auth.check_password(PASSWORD)
+
+    r = client.post("/settings/password", data={"csrf": token, "current": PASSWORD,
+                                                "new1": "nove-dlouhe-heslo", "new2": "nove-dlouhe-heslo"},
+                    follow_redirects=False)
+    assert r.headers["location"].startswith("/login")
+    assert auth.check_password("nove-dlouhe-heslo") and not auth.check_password(PASSWORD)
+    # staré sezení už neplatí, i kdyby si cookie někdo schoval
+    assert client.get("/", follow_redirects=False).status_code == 303
+
+
+def test_proxy_url_from_admin(admin):
+    client, _ = admin
+    from podcast import config, state
+    r = client.post("/settings/proxy-url", data={"csrf": csrf(client), "proxy_url": "neplatna"},
+                    follow_redirects=False)
+    assert "err=" in r.headers["location"]
+
+    client.post("/settings/proxy-url", data={"csrf": csrf(client),
+                                             "proxy_url": "http://jinde:11435/"})
+    assert state.load()["proxy_url"] == "http://jinde:11435"
+    assert config.proxy_url(config.load()) == ("http://jinde:11435", "administrace")
+
+    client.post("/settings/proxy-url", data={"csrf": csrf(client), "proxy_url": ""})
+    assert "proxy_url" not in state.load()
+    assert config.proxy_url(config.load())[1] == "config.yaml"
 
 
 def test_test_and_create_report_proxy_errors(admin, monkeypatch):
@@ -504,11 +576,8 @@ def test_https_behind_proxy_marks_cookie_secure(admin, monkeypatch):
     assert r.headers["Strict-Transport-Security"].startswith("max-age=31536000")
 
 
-def test_weak_password_is_reported(monkeypatch):
+def test_weak_password_is_reported():
     from podcast import auth
-    monkeypatch.setenv("PODCAST_ADMIN_PASSWORD", "heslo")
-    assert "hádají" in auth.weak_password()             # hádatelné se pozná dřív než krátké
-    monkeypatch.setenv("PODCAST_ADMIN_PASSWORD", "Xk3-nahodne")
-    assert "znaků" in auth.weak_password()
-    monkeypatch.setenv("PODCAST_ADMIN_PASSWORD", "dost-dlouhe-a-nahodne-heslo")
-    assert auth.weak_password() == ""
+    assert "hádají" in auth.weak_password("heslo")      # hádatelné se pozná dřív než krátké
+    assert "znaků" in auth.weak_password("Xk3-nahodne")
+    assert auth.weak_password("dost-dlouhe-a-nahodne-heslo") == ""

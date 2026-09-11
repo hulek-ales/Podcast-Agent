@@ -1,9 +1,13 @@
 """Přihlášení do administrace: podepsané sezení v cookie + ochrana formulářů.
 
-Heslo je v PODCAST_ADMIN_PASSWORD (jinde by ho musel agent umět měnit, a na
-jednouživatelskou administraci to nestojí za komplikaci). Sezení je podepsané
-HMAC podpisem ze state.json, takže přežije restart kontejneru, ale po smazání
-state.json nebo po změně hesla platit přestane.
+Heslo si drží agent sám: ve state.json leží jeho PBKDF2 otisk a mění se
+v administraci. Při prvním startu, kdy žádné není, se vyrobí náhodné a vypíše
+jednou do logu kontejneru (`docker logs podcast-agent`) — nikde tedy není žádné
+výchozí heslo, které by někdo uhodl. PODCAST_ADMIN_PASSWORD se použije jen jako
+první heslo místo toho náhodného; jakmile si ho změníš, proměnná se ignoruje.
+
+Sezení je podepsané podpisem ze state.json a otiskem hesla, takže přežije
+restart kontejneru, ale změna hesla ho zneplatní.
 
 Když je aplikace vystavená do internetu, je heslo jediná brána, takže:
 
@@ -18,10 +22,12 @@ import hashlib
 import hmac
 import ipaddress
 import os
+import secrets
 import time
 
 from . import state
 
+PBKDF2_ITER = 200_000
 COOKIE = "podcast_admin"
 TTL = 12 * 3600      # administrace se otevírá jednou za čas, delší sezení nemá důvod
 MIN_PASSWORD = 12    # co je vystavené do internetu, chce delší heslo
@@ -33,16 +39,48 @@ LOCK_BASE_S = 30     # první zámek; každý další pokus ho zdvojnásobí (ma
 LOCK_MAX_S = 3600
 
 
-def password() -> str:
-    return os.environ.get("PODCAST_ADMIN_PASSWORD", "")
+# ------------------------------------------------------------ heslo
+
+def hash_password(plain: str) -> str:
+    salt = secrets.token_hex(16)
+    dk = hashlib.pbkdf2_hmac("sha256", plain.encode(), salt.encode(), PBKDF2_ITER).hex()
+    return "pbkdf2$" + str(PBKDF2_ITER) + "$" + salt + "$" + dk
+
+
+def stored_hash() -> str:
+    return state.load().get("admin_password", "")
+
+
+def has_password() -> bool:
+    return bool(stored_hash())
+
+
+def set_password(plain: str):
+    data = state.load()
+    data["admin_password"] = hash_password(plain)
+    state.save(data)
+
+
+def bootstrap() -> str:
+    """Zajistí, že heslo existuje. Vrátí nově vyrobené (k vypsání do logu), nebo ""."""
+    if has_password():
+        return ""
+    seed = os.environ.get("PODCAST_ADMIN_PASSWORD", "")
+    if seed:
+        set_password(seed)
+        return ""
+    generated = secrets.token_urlsafe(18)
+    set_password(generated)
+    return generated
 
 
 def enabled() -> bool:
-    return bool(password())
+    return has_password()
 
 
 def _sign(message: str) -> str:
-    key = (state.session_secret() + password()).encode()   # změna hesla zneplatní sezení
+    # otisk hesla v podpisu: změna hesla zneplatní všechna sezení
+    key = (state.session_secret() + stored_hash()).encode()
     return hmac.new(key, message.encode(), hashlib.sha256).hexdigest()
 
 
@@ -64,12 +102,22 @@ def valid_session(token: str) -> bool:
 
 
 def check_password(value: str) -> bool:
-    return bool(value) and hmac.compare_digest(value, password())
+    stored = stored_hash()
+    if not value or not stored:
+        return False
+    try:
+        algo, iters, salt, dk = stored.split("$")
+    except ValueError:
+        return False
+    if algo != "pbkdf2":
+        return False
+    calc = hashlib.pbkdf2_hmac("sha256", value.encode(), salt.encode(), int(iters)).hex()
+    return hmac.compare_digest(calc, dk)
 
 
-def weak_password() -> str:
-    """Proč heslo nestačí, nebo prázdný řetězec. Jen varování, běh nebrání."""
-    value = password()
+def weak_password(value: str = None) -> str:
+    """Proč heslo nestačí, nebo prázdný řetězec. Kontroluje se při jeho zadání."""
+    value = value if value is not None else os.environ.get("PODCAST_ADMIN_PASSWORD", "")
     if not value:
         return ""
     if value.lower() in ("heslo", "password", "admin", "podcast", "changeme", "admin123",

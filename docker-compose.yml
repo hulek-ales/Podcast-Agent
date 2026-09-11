@@ -1,8 +1,13 @@
 # Agent nepotřebuje GPU — veškerá práce jde přes ollama-proxy.
 #
-# Jeden kontejner, jeden port: administrace i podcastový feed servíruje sama
-# aplikace, každé s vlastním ověřením (heslo / token v URL). Statický nginx tu
-# schválně není — servíroval by hotové díly komukoli na síti.
+# Žádná tajemství tady nejsou: heslo do administrace i klíč k proxy se zadávají
+# v administraci a leží v /data (state.json, keys.json, práva 600). Při prvním
+# startu se vyrobí náhodné heslo a vypíše se do logu:
+#
+#     docker compose up -d && docker compose logs podcast-agent | grep heslo
+#
+# Tady zůstává jen to, co musí být známé dřív, než aplikace naběhne, a co je
+# vlastností nasazení, ne uživatele.
 services:
   podcast-agent:
     build: .
@@ -11,17 +16,14 @@ services:
     restart: unless-stopped
     environment:
       TZ: Europe/Prague
-      RUN_AT: "${RUN_AT:-03:10}"        # prázdné = vyrobit díl hned a skončit
-      PODCAST_PROXY_URL: "${PODCAST_PROXY_URL:-http://ollama-proxy:11435}"
-      PODCAST_PROXY_KEY: "${PODCAST_PROXY_KEY:-}"   # nebo klíč přidej v administraci
-      # bez hesla web vůbec nenaběhne (administrace ani feed)
-      PODCAST_ADMIN_PASSWORD: "${PODCAST_ADMIN_PASSWORD:?nastav heslo do administrace}"
-      PODCAST_FEED_TOKEN: "${PODCAST_FEED_TOKEN:-}"  # prázdné = vyrobí se samo a ukáže v administraci
+      RUN_AT: "${RUN_AT:-03:10}"        # kdy vyrábět díl; prázdné = jednou hned a skončit
       ADMIN_PORT: "8089"
-      # --- vystavení do internetu (viz README) ---
-      PODCAST_BEHIND_PROXY: "${PODCAST_BEHIND_PROXY:-}"   # 1 = věřit X-Forwarded-For/-Proto od proxy
-      TRUSTED_PROXY_IPS: "${TRUSTED_PROXY_IPS:-127.0.0.1}"  # adresa té reverzní proxy
-      PODCAST_ADMIN_ALLOW: "${PODCAST_ADMIN_ALLOW:-}"    # sítě, odkud smí administrace; prázdné = odkudkoli
+      # --- za reverzní proxou (viz README → Vystavení do internetu) ---
+      # Schválně jen v prostředí: kdo může tohle přepnout, obejde zamykání
+      # po špatných heslech i omezení sítí, takže to nepatří do webu.
+      PODCAST_BEHIND_PROXY: "${PODCAST_BEHIND_PROXY:-}"     # 1 = věřit X-Forwarded-For/-Proto
+      TRUSTED_PROXY_IPS: "${TRUSTED_PROXY_IPS:-127.0.0.1}"  # adresa té proxy, NE "*"
+      PODCAST_ADMIN_ALLOW: "${PODCAST_ADMIN_ALLOW:-}"       # sítě pro administraci; prázdné = odkudkoli
     ports:
       - "${ADMIN_PORT:-8089}:8089"      # administrace + feed
     volumes:

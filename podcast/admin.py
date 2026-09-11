@@ -189,6 +189,15 @@ je jediné, co díly chrání — kdo ho má, stáhne si je.</p>
 <input type="hidden" name="csrf" value="{token}">
 <button class="danger">Přegenerovat token</button></form>
 </div>
+<h2>Adresa proxy</h2>
+<div class="panel"><form method="post" action="/settings/proxy-url">
+<input type="hidden" name="csrf" value="{token}">
+<div class="field"><label for="proxy_url">Kam agent posílá dotazy</label>
+<input id="proxy_url" name="proxy_url" value="{saved_url}" placeholder="http://ollama-proxy:11435"></div>
+<div class="help" style="margin:-6px 0 12px">Teď platí <code>{url}</code> ({url_src}). Prázdné =
+vrátit se k hodnotě z prostředí nebo z config.yaml. Klíč může mít vlastní adresu, ta má přednost.</div>
+<button>Uložit</button></form></div>
+
 <h2>Přidat existující klíč</h2>
 <div class="panel"><form method="post" action="/keys/add">
 <input type="hidden" name="csrf" value="{token}">
@@ -214,12 +223,27 @@ použije se jednou a zapomene.</p>
 </div>
 <div class="field"><label for="models">Povolené modely</label><input id="models" name="models" value="{wanted}"></div>
 <button>Vyrobit klíč</button></form></div>
+
+<h2>Heslo do administrace</h2>
+<div class="panel"><form method="post" action="/settings/password">
+<input type="hidden" name="csrf" value="{token}">
+<div class="row">
+  <div class="field"><label for="current">Současné heslo</label>
+    <input type="password" id="current" name="current" autocomplete="current-password" required></div>
+  <div class="field"><label for="new1">Nové heslo (aspoň {min_pw} znaků)</label>
+    <input type="password" id="new1" name="new1" autocomplete="new-password" required></div>
+  <div class="field"><label for="new2">Nové heslo znovu</label>
+    <input type="password" id="new2" name="new2" autocomplete="new-password" required></div>
+</div>
+<div class="help" style="margin:-6px 0 12px">Změnou hesla se odhlásí všechna sezení, i tohle.</div>
+<button>Změnit heslo</button></form></div>
 </main></body></html>""".format(
         css=CSS, store=escape(keys.store_path()), rows=key_rows(cfg, token), token=token,
         msg=('<div class="flash good">' + escape(msg) + "</div>") if msg else "",
         err=('<div class="flash bad">' + escape(err) + "</div>") if err else "",
         env=env_note, detail=detail, new_key=new_key,
         feed_url=escape(feed_link(cfg)), episodes=len(feedmod.load_episodes(cfg.path("output.dir", "out"))),
+        saved_url=escape(state.load().get("proxy_url", "")), min_pw=auth.MIN_PASSWORD,
         url=escape(url or "—"), url_src=escape(url_src), key_src=escape(key_src),
         masked=escape(keys.mask(key)) if key else "—",
         wanted=escape(", ".join(m for m in wanted if m)))
@@ -339,6 +363,40 @@ def media(name: str, request: Request):
     if os.path.dirname(target) != out_dir or not os.path.isfile(target):
         raise HTTPException(404, "takový soubor tu není")     # ../ ven z adresáře nepustí
     return FileResponse(target)
+
+
+@app.post("/settings/proxy-url")
+def set_proxy_url(request: Request, csrf: str = Form(""), proxy_url: str = Form("")):
+    check_csrf(csrf, require(request))
+    data = state.load()
+    value = proxy_url.strip().rstrip("/")
+    if value and not value.startswith(("http://", "https://")):
+        return back(err="Adresa musí začínat http:// nebo https://")
+    if value:
+        data["proxy_url"] = value
+    else:
+        data.pop("proxy_url", None)
+    state.save(data)
+    return back(msg="Adresa proxy uložena." if value else "Adresa proxy smazána, platí prostředí nebo config.")
+
+
+@app.post("/settings/password")
+def set_password(request: Request, csrf: str = Form(""), current: str = Form(""),
+                 new1: str = Form(""), new2: str = Form("")):
+    check_csrf(csrf, require(request))
+    if not auth.check_password(current):
+        import time
+        time.sleep(1.0)
+        return back(err="Současné heslo nesedí.")
+    if new1 != new2:
+        return back(err="Nová hesla se neshodují.")
+    problem = auth.weak_password(new1)
+    if problem:
+        return back(err="Nové heslo nevyhovuje: " + problem)
+    auth.set_password(new1)
+    resp = RedirectResponse("/login?err=" + "Heslo změněno, přihlaš se znovu.", status_code=303)
+    resp.delete_cookie(auth.COOKIE, path="/")    # podpis sezení se změnou hesla mění
+    return resp
 
 
 @app.post("/feed/rotate")

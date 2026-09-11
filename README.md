@@ -55,17 +55,37 @@ Agent má jednu webovou aplikaci na portu 8089 a **nic v ní není veřejné**:
 | `/` | administrace klíčů | heslo + sezení v podepsané cookie |
 | `/feed.xml`, `/media/…` | podcastový feed a mp3 | token v URL |
 
+**Žádné tajemství není v compose ani v konfiguraci.** Heslo do administrace
+i klíč k proxy se zadávají tady na stránce a leží v `/data` (`state.json`,
+`keys.json`, práva 600).
+
+Při prvním startu si agent vyrobí náhodné heslo a **vypíše ho jednou do logu**:
+
 ```bash
-PODCAST_ADMIN_PASSWORD=… uvicorn podcast.admin:app --host 0.0.0.0 --port 8089
+docker compose up -d
+docker compose logs podcast-agent | grep -A 3 HESLO
 ```
 
-Bez `PODCAST_ADMIN_PASSWORD` web vůbec nenaběhne — ani administrace, ani feed.
-To je schválně: hotové díly se nesmí vystavit bez ověření.
+Přihlas se s ním a hned si ho v administraci změň. Žádné výchozí heslo, které
+by šlo uhodnout, neexistuje. (Kdo si chce heslo nastavit předem, může při prvním
+startu vyplnit `PODCAST_ADMIN_PASSWORD`; jakmile si ho jednou změníš, proměnná
+se ignoruje.)
+
+Ručně mimo Docker:
+
+```bash
+python -c "from podcast import auth; print(auth.bootstrap() or 'heslo už existuje')"
+uvicorn podcast.admin:app --host 0.0.0.0 --port 8089
+```
+
+Zapomenuté heslo se řeší smazáním `admin_password` ze `state.json` — při dalším
+startu se vyrobí nové a vypíše do logu.
 
 ### Administrace klíčů
 
 Klíč je tajemství, takže nepatří do `config.yaml`, který se verzuje. Stránka umí:
 
+- **nastavit adresu proxy** a **změnit heslo** do administrace;
 - **přidat** klíč `opx_…`, pojmenovat ho a případně mu dát vlastní adresu proxy;
 - **otestovat** ho — vypíše, které modely s ním agent uvidí a který z potřebných
   mu chybí, takže nemusíš hádat, proč běh spadl na 403;
@@ -77,14 +97,14 @@ Klíč je tajemství, takže nepatří do `config.yaml`, který se verzuje. Str�
 Klíče leží v `keys.json` vedle konfigurace s právy 600 a na stránce se ukazují jen
 maskované (`opx_denni_…`).
 
-**Odkud se bere klíč**, když je jich víc (první, který existuje, vyhrává):
+**Odkud se bere klíč a adresa** (první nalezené vyhrává):
 
-1. aktivní klíč z administrace,
-2. `PODCAST_PROXY_KEY` z prostředí,
-3. `proxy.key` v `config.yaml`.
+1. administrace — aktivní klíč a uložená adresa,
+2. `PODCAST_PROXY_KEY` / `PODCAST_PROXY_URL` z prostředí,
+3. `proxy.key` / `proxy.url` v `config.yaml`.
 
-Když nastavíš klíč v administraci a v compose zůstane starý, platí ten z administrace
-— stránka na to upozorní. `python -m podcast.run --check` vypíše, odkud klíč přišel.
+Administrace je schválně první: je to poslední vědomá volba člověka. Stránka
+i `python -m podcast.run --check` ukážou, odkud hodnota přišla.
 
 Ať děláš klíč ručně nebo přes tlačítko, omez ho jen na to, co agent používá:
 
@@ -137,8 +157,11 @@ environment:
   PODCAST_BEHIND_PROXY: "1"            # věřit X-Forwarded-For/-Proto
   TRUSTED_PROXY_IPS: "172.16.0.5"      # adresa tvé reverzní proxy, NE "*"
   PODCAST_ADMIN_ALLOW: "192.168.1.0/24"  # administrace jen z domova (feed zůstává venku)
-  PODCAST_ADMIN_PASSWORD: "…"          # dlouhé a náhodné, aspoň 12 znaků
 ```
+
+Tyhle tři zůstávají v prostředí schválně, i když všechno ostatní je ve webu:
+musí platit dřív, než aplikace naběhne, a kdo je může přepnout, obejde zamykání
+po špatných heslech i omezení sítí. Do stránky, kterou chrání právě ony, nepatří.
 
 `PODCAST_ADMIN_ALLOW` je ta nejúčinnější věc: **feed ven, administrace ne.**
 Klíče k proxy spravuješ z domova a z internetu je vidět jen `/feed.xml`

@@ -12,24 +12,33 @@ if [ ! -f "$CONFIG" ]; then
   exit 1
 fi
 
-# Web = administrace (heslo) + feed s díly (token). Bez hesla neběží ani jedno,
-# ať se hotové díly nikdy nevystaví bez ověření.
-if [ -n "$PODCAST_ADMIN_PASSWORD" ]; then
-  python -c "
+# Web = administrace (heslo) + feed s díly (token). Heslo si agent drží sám;
+# při prvním startu vyrobí náhodné a vypíše ho sem do logu.
+python -c "
 from podcast import auth
-problem = auth.weak_password()
-print('[start] POZOR: ' + problem if problem else '[start] heslo administrace vypadá rozumně')
+new = auth.bootstrap()
+if new:
+    print('')
+    print('  ' + '=' * 66)
+    print('  HESLO DO ADMINISTRACE (vypisuje se jen teď, pak už nikde):')
+    print('')
+    print('      ' + new)
+    print('')
+    print('  Přihlas se s ním a v administraci si ho změň.')
+    print('  ' + '=' * 66)
+    print('')
+else:
+    problem = auth.weak_password()
+    if problem:
+        print('[start] POZOR: heslo z PODCAST_ADMIN_PASSWORD — ' + problem)
 "
-  echo "[start] web na portu ${ADMIN_PORT:-8089} (administrace + feed)"
-  # --proxy-headers: za reverzní proxou je skutečná adresa v X-Forwarded-For.
-  # --forwarded-allow-ips nastav na adresu té proxy, ne na '*', jinak si hlavičku
-  # může vymyslet kdokoli a obejít zamykání po špatných heslech.
-  uvicorn podcast.admin:app --host 0.0.0.0 --port "${ADMIN_PORT:-8089}" \
-    --no-server-header \
-    ${PODCAST_BEHIND_PROXY:+--proxy-headers --forwarded-allow-ips="${TRUSTED_PROXY_IPS:-127.0.0.1}"} &
-else
-  echo "[start] web neběží: chybí PODCAST_ADMIN_PASSWORD (feed ani administrace nejsou dostupné)"
-fi
+echo "[start] web na portu ${ADMIN_PORT:-8089} (administrace + feed)"
+# --proxy-headers: za reverzní proxou je skutečná adresa v X-Forwarded-For.
+# --forwarded-allow-ips nastav na adresu té proxy, ne na '*', jinak si hlavičku
+# může vymyslet kdokoli a obejít zamykání po špatných heslech.
+uvicorn podcast.admin:app --host 0.0.0.0 --port "${ADMIN_PORT:-8089}" \
+  --no-server-header \
+  ${PODCAST_BEHIND_PROXY:+--proxy-headers --forwarded-allow-ips="${TRUSTED_PROXY_IPS:-127.0.0.1}"} &
 
 run() {
   echo "[start] $(date '+%F %T') spouštím díl"
@@ -38,8 +47,7 @@ run() {
 
 if [ -z "$RUN_AT" ]; then
   run
-  # s webem zůstat naživu: feed musí být k dispozici i po dokončení dílu
-  [ -n "$PODCAST_ADMIN_PASSWORD" ] && wait
+  wait          # web musí zůstat naživu: feed je potřeba i po dokončení dílu
   exit 0
 fi
 
