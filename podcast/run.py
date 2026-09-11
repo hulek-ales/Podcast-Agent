@@ -15,7 +15,7 @@ import os
 import sys
 from datetime import datetime
 
-from . import cluster, collect, config, feed, script, speak, summarize
+from . import cluster, collect, config, feed, script, speak, state, summarize
 from .opx import OpxError
 
 STEPS = ("collect", "cluster", "summarize", "script", "speak", "feed")
@@ -130,11 +130,14 @@ def run(cfg, steps: tuple, resume: bool, day: datetime) -> int:
         feed.save_episode(out_dir, slug, episode, audio, script.as_markdown(episode))
 
     if "feed" in steps:
-        feed.build_feed(out_dir, cfg)
+        token = state.feed_token()
+        feed.build_feed(out_dir, cfg, token)
         removed = feed.prune(out_dir, int(cfg.path("output.keep_episodes", 0)))
         if removed:
             print("[feed] smazáno " + str(removed) + " starých dílů", flush=True)
-            feed.build_feed(out_dir, cfg)
+            feed.build_feed(out_dir, cfg, token)
+        print("[feed] adresa pro čtečku: " + cfg.path("output.base_url", "").rstrip("/")
+              + "/feed.xml?token=" + token, flush=True)
     return 0
 
 

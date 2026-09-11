@@ -73,9 +73,10 @@ def test_feed_roundtrip(tmp_path):
     meta = feed.save_episode(out, "2026-09-11", episode, audio, "# Přehled\n")
     assert meta["bytes"] == 103 and os.path.isfile(os.path.join(out, "2026-09-11.md"))
 
-    cfg = Config({"output": {"base_url": "http://server:8088"}, "feed": {"title": "Přehled dne"}})
-    xml = open(feed.build_feed(out, cfg), encoding="utf-8").read()
-    assert '<enclosure url="http://server:8088/2026-09-11.mp3" length="103" type="audio/mpeg"/>' in xml
+    cfg = Config({"output": {"base_url": "http://server:8089"}, "feed": {"title": "Přehled dne"}})
+    xml = open(feed.build_feed(out, cfg, token="tajny"), encoding="utf-8").read()
+    assert ('<enclosure url="http://server:8089/media/2026-09-11.mp3?token=tajny" '
+            'length="103" type="audio/mpeg"/>') in xml
     assert "Rozpočet &amp; daně" in xml            # XML se escapuje
     assert len(feed.load_episodes(out)) == 1
 

@@ -4,6 +4,10 @@ Klíčová část celého projektu: díl se nekopíruje do telefonu ručně, ale
 zveřejní se jako feed, který si přidáš do AntennaPodu nebo Pocket Casts.
 Telefon si epizodu sám stáhne přes noc a pamatuje si, kde jsi přestal.
 
+Feed i zvuk servíruje sám agent (podcast.admin) a chrání je token v URL —
+čtečky podcastů se přihlašovat neumí, takže token je jediná forma, kterou
+spolknou. Proto je i v odkazech na mp3 uvnitř feedu.
+
 Stav je adresář se soubory: <slug>.mp3, <slug>.md a <slug>.json. Feed se
 pokaždé postaví znovu z těch .json — žádná databáze není potřeba.
 """
@@ -63,8 +67,8 @@ def _date(value: str) -> str:
         return format_datetime(datetime.now(timezone.utc))
 
 
-def _item(meta: dict, base_url: str) -> str:
-    url = base_url.rstrip("/") + "/" + meta["audio"]
+def _item(meta: dict, base_url: str, token: str = "") -> str:
+    url = base_url.rstrip("/") + "/media/" + meta["audio"] + ("?token=" + token if token else "")
     mime = MIME.get(os.path.splitext(meta["audio"])[1].lower(), "audio/mpeg")
     topics = "\n".join("• " + t for t in meta.get("topics", []))
     return """  <item>
@@ -78,8 +82,9 @@ def _item(meta: dict, base_url: str) -> str:
                     slug=escape(meta["slug"]), url=escape(url), size=meta.get("bytes", 0), mime=mime)
 
 
-def build_feed(out_dir: str, cfg) -> str:
-    """Vygeneruje feed.xml z uložených dílů. Vrátí cestu k souboru."""
+def build_feed(out_dir: str, cfg, token: str = "") -> str:
+    """Vygeneruje feed.xml z uložených dílů. `token` se přidá do odkazů na zvuk,
+    jinak by je čtečka nestáhla. Vrátí cestu k souboru."""
     base_url = cfg.need("output.base_url")
     episodes = load_episodes(out_dir)
     channel = {
@@ -106,7 +111,7 @@ def build_feed(out_dir: str, cfg) -> str:
 """.format(title=escape(channel["title"]), base=escape(base_url.rstrip("/") + "/"),
            desc=escape(channel["description"]), lang=escape(channel["language"]),
            now=format_datetime(datetime.now(timezone.utc)), author=escape(channel["author"]),
-           image=image, items="\n".join(_item(m, base_url) for m in episodes))
+           image=image, items="\n".join(_item(m, base_url, token) for m in episodes))
     path = os.path.join(out_dir, "feed.xml")
     with open(path, "w", encoding="utf-8") as f:
         f.write(xml)

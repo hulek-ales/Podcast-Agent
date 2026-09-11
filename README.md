@@ -22,7 +22,7 @@ RSS ──► sběr ──► shluky ──► shrnutí ──► scénář ─�
 | shrnutí | **lokálně**, přes frontu úloh (`/mgmt/v1/jobs`) | objemová práce, styl nerozhoduje; počká na volnou GPU |
 | scénář | **komerčně** přes proxy (`/providers/openai/…`) | jediné místo, kde záleží na češtině; haléře na díl |
 | hlas | **GPU služba** v proxy (`/v1/audio/speech`) | jeden díl = jeden dotaz, proxy kvůli němu uvolní Ollamu |
-| feed | agent | RSS 2.0 + iTunes, `<enclosure>` na mp3 |
+| feed | agent | RSS 2.0 + iTunes, `<enclosure>` na mp3, za tokenem |
 
 ## Rychlý start
 
@@ -44,19 +44,27 @@ PODCAST_ADMIN_PASSWORD=… docker compose up -d --build
 docker compose restart podcast-agent
 ```
 
-Feed pak přidáš v AntennaPodu jako `http://server:8088/feed.xml`.
+Adresu feedu i s tokenem pak najdeš v administraci na `http://server:8089`.
 
-## Klíče k proxy a administrace
+## Web: administrace a feed
 
-Klíč je tajemství, takže nepatří do `config.yaml`, který se verzuje. Agent má
-na správu klíčů vlastní stránku:
+Agent má jednu webovou aplikaci na portu 8089 a **nic v ní není veřejné**:
+
+| cesta | co to je | čím je chráněná |
+|---|---|---|
+| `/` | administrace klíčů | heslo + sezení v podepsané cookie |
+| `/feed.xml`, `/media/…` | podcastový feed a mp3 | token v URL |
 
 ```bash
 PODCAST_ADMIN_PASSWORD=… uvicorn podcast.admin:app --host 0.0.0.0 --port 8089
 ```
 
-V Dockeru naběhne sama, jakmile je `PODCAST_ADMIN_PASSWORD` vyplněné
-(`http://server:8089`, přihlášení `admin` + to heslo). Umí:
+Bez `PODCAST_ADMIN_PASSWORD` web vůbec nenaběhne — ani administrace, ani feed.
+To je schválně: hotové díly se nesmí vystavit bez ověření.
+
+### Administrace klíčů
+
+Klíč je tajemství, takže nepatří do `config.yaml`, který se verzuje. Stránka umí:
 
 - **přidat** klíč `opx_…`, pojmenovat ho a případně mu dát vlastní adresu proxy;
 - **otestovat** ho — vypíše, které modely s ním agent uvidí a který z potřebných
@@ -76,8 +84,7 @@ maskované (`opx_denni_…`).
 3. `proxy.key` v `config.yaml`.
 
 Když nastavíš klíč v administraci a v compose zůstane starý, platí ten z administrace
-— stránka na to upozorní, ať to není záhada. `python -m podcast.run --check` vypíše,
-odkud klíč přišel.
+— stránka na to upozorní. `python -m podcast.run --check` vypíše, odkud klíč přišel.
 
 Ať děláš klíč ručně nebo přes tlačítko, omez ho jen na to, co agent používá:
 
@@ -87,8 +94,25 @@ max_jobs: 50        strop čekajících úloh
 rate_per_min: 60
 ```
 
-**Administrace patří jen do domácí sítě.** Zobrazuje a vyrábí klíče k proxy; bez
-hesla v `PODCAST_ADMIN_PASSWORD` vůbec nenaběhne, ale port nevystavuj do internetu.
+### Feed a token
+
+Čtečky podcastů se neumí přihlašovat, takže díly chrání **token v URL**:
+
+```
+http://server:8089/feed.xml?token=…
+```
+
+Přesnou adresu i s tokenem najdeš v administraci, odkud se dá zkopírovat do
+AntennaPodu. Token je i v odkazech na mp3 uvnitř feedu, jinak by je čtečka
+nestáhla. Když ho přegeneruješ (tlačítko v administraci), starý okamžitě
+přestane platit a feed musíš v telefonu přidat znovu.
+
+Token se vyrobí sám při prvním spuštění a leží v `state.json` (práva 600);
+vlastní si můžeš vynutit přes `PODCAST_FEED_TOKEN`.
+
+**Token v URL má svoje meze:** objeví se v logu reverzní proxy i v historii
+prohlížeče. Pro domácí feed je to standardní řešení (takhle fungují i placené
+privátní podcasty), ale do internetu tohle bez další vrstvy nedávej.
 
 ## Kroky zvlášť
 

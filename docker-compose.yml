@@ -1,8 +1,8 @@
 # Agent nepotřebuje GPU — veškerá práce jde přes ollama-proxy.
 #
-# Dva svazky schválně: /data je soukromé (config.yaml s klíčem, mezivýsledky),
-# /data/public vystavuje web. Kdyby bylo všechno v jednom, nginx by nabídl
-# i config.yaml — tedy klíč k proxy.
+# Jeden kontejner, jeden port: administrace i podcastový feed servíruje sama
+# aplikace, každé s vlastním ověřením (heslo / token v URL). Statický nginx tu
+# schválně není — servíroval by hotové díly komukoli na síti.
 services:
   podcast-agent:
     build: .
@@ -13,27 +13,15 @@ services:
       TZ: Europe/Prague
       RUN_AT: "${RUN_AT:-03:10}"        # prázdné = vyrobit díl hned a skončit
       PODCAST_PROXY_URL: "${PODCAST_PROXY_URL:-http://ollama-proxy:11435}"
-      PODCAST_PROXY_KEY: "${PODCAST_PROXY_KEY:-}"   # klíč opx_… — nebo ho přidej v administraci
-      PODCAST_ADMIN_PASSWORD: "${PODCAST_ADMIN_PASSWORD:-}"  # prázdné = administrace neběží
+      PODCAST_PROXY_KEY: "${PODCAST_PROXY_KEY:-}"   # nebo klíč přidej v administraci
+      # bez hesla web vůbec nenaběhne (administrace ani feed)
+      PODCAST_ADMIN_PASSWORD: "${PODCAST_ADMIN_PASSWORD:?nastav heslo do administrace}"
+      PODCAST_FEED_TOKEN: "${PODCAST_FEED_TOKEN:-}"  # prázdné = vyrobí se samo a ukáže v administraci
       ADMIN_PORT: "8089"
     ports:
-      - "${ADMIN_PORT:-8089}:8089"      # administrace klíčů — jen do domácí sítě!
+      - "${ADMIN_PORT:-8089}:8089"      # administrace + feed
     volumes:
-      - podcast_data:/data              # config.yaml + work/ — ven se nedostane
-      - podcast_out:/data/public        # hotové díly a feed.xml
-    networks:
-      - ollamaNet
-
-  # Statické vystavení dílů a feed.xml. Do AntennaPodu pak přidáš
-  # http://server:8088/feed.xml (nebo doménu z output.base_url).
-  podcast-web:
-    image: nginx:alpine
-    container_name: podcast-web
-    restart: unless-stopped
-    ports:
-      - "${WEB_PORT:-8088}:80"
-    volumes:
-      - podcast_out:/usr/share/nginx/html:ro
+      - podcast_data:/data              # config.yaml, keys.json, state.json, work/, public/
     networks:
       - ollamaNet
 
@@ -45,5 +33,3 @@ networks:
 volumes:
   podcast_data:
     name: podcast_data
-  podcast_out:
-    name: podcast_out

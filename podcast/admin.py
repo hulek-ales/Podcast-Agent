@@ -1,61 +1,51 @@
-"""Administrace agenta: správa klíčů k proxy.
+"""Web agenta: administrace klíčů a vystavení hotových dílů.
 
     PODCAST_ADMIN_PASSWORD=… uvicorn podcast.admin:app --host 0.0.0.0 --port 8089
 
-Stránka ukazuje klíče v hesle na disku, umí přidat nový, otestovat, co s ním
-agent uvidí, přepnout aktivní a smazat. Navíc umí z *admin* klíče proxy nechat
-vyrobit nový klíč pro agenta rovnou se správným omezením modelů — admin klíč se
-při tom nikam neukládá, použije se jednou a zapomene.
+Dvě věci pod jednou střechou, každá s vlastním ověřením:
 
-Stránka zobrazuje tajemství, takže bez hesla (PODCAST_ADMIN_PASSWORD) nenaběhne
-a patří jen do domácí sítě — nevystavuj ji do internetu.
+  /            administrace — přihlášení heslem, sezení v podepsané cookie.
+               Klíče k proxy: přidat, otestovat, přepnout aktivní, smazat,
+               nebo z admin klíče proxy nechat vyrobit nový klíč pro agenta
+               (admin klíč se nikam neuloží, použije se jednou a zapomene).
+
+  /feed.xml    podcastový feed a mp3 — token v URL (?token=…), protože
+  /media/…     čtečky podcastů se přihlašovat neumí. Bez tokenu 401.
+
+Nic tu není veřejné: bez PODCAST_ADMIN_PASSWORD administrace vůbec nenaběhne
+a díly jsou za tokenem, který se dá kdykoli přegenerovat.
 """
 
-import hashlib
-import hmac
 import os
-import secrets
 from html import escape
 
 from fastapi import FastAPI, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 
-from . import config, keys
+from . import auth, config, feed as feedmod, keys, state
 from .opx import OpxClient, OpxError
 
-PASSWORD = os.environ.get("PODCAST_ADMIN_PASSWORD", "")
-USERNAME = os.environ.get("PODCAST_ADMIN_USER", "admin")
-REALM = 'Basic realm="Podcast agent"'
-
-app = FastAPI(title="Podcast agent — administrace", docs_url=None, redoc_url=None,
-              openapi_url=None)
+app = FastAPI(title="Podcast agent", docs_url=None, redoc_url=None, openapi_url=None)
 
 
 # ----------------------------------------------------------- přihlášení
 
-def csrf_token() -> str:
-    """Odvozený z hesla: prohlížeč posílá Basic přihlášení sám, takže samotné
-    heslo proti odeslání formuláře z cizí stránky nechrání."""
-    return hmac.new(PASSWORD.encode(), b"podcast-csrf", hashlib.sha256).hexdigest()[:32]
+def session_of(request: Request) -> str:
+    return request.cookies.get(auth.COOKIE, "")
 
 
-def require(request: Request):
-    if not PASSWORD:
+def require(request: Request) -> str:
+    """Vrátí token sezení, nebo skončí: 503 bez hesla, 401 bez přihlášení."""
+    if not auth.enabled():
         raise HTTPException(503, "administrace je vypnutá: chybí PODCAST_ADMIN_PASSWORD")
-    header = request.headers.get("authorization", "")
-    if header.lower().startswith("basic "):
-        import base64
-        try:
-            user, _, password = base64.b64decode(header[6:]).decode().partition(":")
-        except Exception:
-            user = password = ""
-        if hmac.compare_digest(user, USERNAME) and hmac.compare_digest(password, PASSWORD):
-            return
-    raise HTTPException(401, "přihlaš se", headers={"WWW-Authenticate": REALM})
+    token = session_of(request)
+    if not auth.valid_session(token):
+        raise HTTPException(401, "přihlaš se")
+    return token
 
 
-def check_csrf(token: str):
-    if not hmac.compare_digest(token or "", csrf_token()):
+def check_csrf(token: str, session: str):
+    if not auth.valid_csrf(token, session):
         raise HTTPException(400, "formulář vypršel, načti stránku znovu")
 
 
@@ -66,7 +56,7 @@ CSS = """
 --fg:#c9d1d9;--fg2:#e6edf3;--mute:#6e7781;--link:#58a6ff;--ok:#3fb950;--warn:#d29922;--bad:#f85149}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
-header{padding:12px 20px;border-bottom:1px solid var(--line);background:var(--bg2);color:var(--fg2);font-weight:600}
+header{padding:12px 20px;border-bottom:1px solid var(--line);background:var(--bg2);color:var(--fg2);font-weight:600;display:flex;justify-content:space-between;align-items:center}
 main{max-width:900px;margin:0 auto;padding:22px 20px 60px}
 h1{font-size:16px;margin:0 0 4px;color:var(--fg2)}
 h2{font-size:14px;margin:26px 0 8px;color:var(--fg2)}
@@ -92,14 +82,26 @@ code{background:var(--bg2);border:1px solid var(--line);border-radius:3px;paddin
 pre{background:var(--bg2);border:1px solid var(--line);border-radius:6px;padding:12px;white-space:pre-wrap;margin:0}
 .help{color:var(--mute);font-size:12px;margin-top:3px}
 .keybox{font-size:15px;padding:12px;background:var(--bg2);border:1px solid var(--ok);border-radius:6px;word-break:break-all;color:var(--fg2);user-select:all}
+.login{max-width:360px;margin:80px auto}
+.url{word-break:break-all;background:var(--bg2);border:1px solid var(--line);border-radius:4px;padding:8px;display:block;color:var(--fg2);user-select:all}
 """
 
+LOGIN_PAGE = """<!doctype html><html lang="cs"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Přihlášení · Podcast agent</title><style>{css}</style></head><body>
+<header>Podcast agent</header><main><div class="panel login">
+<h1>Přihlášení</h1>{err}
+<form method="post" action="/login">
+<input type="hidden" name="next" value="{next}">
+<div class="field"><label for="password">Heslo administrace</label>
+<input type="password" id="password" name="password" autocomplete="current-password" autofocus required></div>
+<button>Přihlásit</button></form></div></main></body></html>"""
 
-def key_rows(cfg) -> str:
+
+def key_rows(cfg, token: str) -> str:
     entries = keys.load()
     if not entries:
         return '<tr><td colspan="5" class="mute">Zatím žádný klíč — přidej ho níž.</td></tr>'
-    token = csrf_token()
     rows = []
     for entry in entries:
         active = entry.get("active")
@@ -127,8 +129,8 @@ def key_rows(cfg) -> str:
     return "".join(rows)
 
 
-def page(cfg, msg="", err="", detail="", new_key="") -> str:
-    token = csrf_token()
+def page(cfg, session: str, msg="", err="", detail="", new_key="") -> str:
+    token = auth.csrf(session)
     key, key_src = config.proxy_key(cfg)
     url, url_src = config.proxy_url(cfg)
     wanted = [cfg.path(k) for k in ("models.embed", "models.summarize", "models.script", "models.tts")]
@@ -139,7 +141,9 @@ def page(cfg, msg="", err="", detail="", new_key="") -> str:
     return """<!doctype html><html lang="cs"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Administrace · Podcast agent</title><style>{css}</style></head><body>
-<header>Podcast agent — administrace</header><main>
+<header><span>Podcast agent — administrace</span>
+<form method="post" action="/logout"><input type="hidden" name="csrf" value="{token}">
+<button class="link">odhlásit</button></form></header><main>
 <h1>Klíče k Ollama proxy</h1>
 <p class="sub">Klíč je tajemství, proto nežije v <code>config.yaml</code>, ale v
 <code>{store}</code> (práva 600). Agent používá ten označený jako aktivní.</p>
@@ -153,6 +157,17 @@ def page(cfg, msg="", err="", detail="", new_key="") -> str:
 <table><tr><th></th><th>název</th><th>klíč</th><th>adresa / přidán</th><th></th></tr>
 {rows}</table>
 {detail}
+
+<h2>Podcastový feed</h2>
+<div class="panel">
+<p class="help" style="margin-top:0">Tuhle adresu vlož do AntennaPodu nebo Pocket Casts. Token v ní
+je jediné, co díly chrání — kdo ho má, stáhne si je.</p>
+<code class="url">{feed_url}</code>
+<p class="help">Hotových dílů: {episodes}</p>
+<form method="post" action="/feed/rotate" onsubmit="return confirm('Přegenerovat token? Feed v telefonu přestane fungovat a budeš ho muset přidat znovu.')">
+<input type="hidden" name="csrf" value="{token}">
+<button class="danger">Přegenerovat token</button></form>
+</div>
 <h2>Přidat existující klíč</h2>
 <div class="panel"><form method="post" action="/keys/add">
 <input type="hidden" name="csrf" value="{token}">
@@ -179,18 +194,19 @@ použije se jednou a zapomene.</p>
 <div class="field"><label for="models">Povolené modely</label><input id="models" name="models" value="{wanted}"></div>
 <button>Vyrobit klíč</button></form></div>
 </main></body></html>""".format(
-        css=CSS, store=escape(keys.store_path()), rows=key_rows(cfg), token=token,
+        css=CSS, store=escape(keys.store_path()), rows=key_rows(cfg, token), token=token,
         msg=('<div class="flash good">' + escape(msg) + "</div>") if msg else "",
         err=('<div class="flash bad">' + escape(err) + "</div>") if err else "",
         env=env_note, detail=detail, new_key=new_key,
+        feed_url=escape(feed_link(cfg)), episodes=len(feedmod.load_episodes(cfg.path("output.dir", "out"))),
         url=escape(url or "—"), url_src=escape(url_src), key_src=escape(key_src),
         masked=escape(keys.mask(key)) if key else "—",
         wanted=escape(", ".join(m for m in wanted if m)))
 
 
-def render(msg="", err="", detail="", new_key="") -> HTMLResponse:
+def render(session: str, msg="", err="", detail="", new_key="") -> HTMLResponse:
     cfg = config.load()
-    return HTMLResponse(page(cfg, msg, err, detail, new_key))
+    return HTMLResponse(page(cfg, session, msg, err, detail, new_key))
 
 
 def back(msg="", err="") -> RedirectResponse:
@@ -201,22 +217,115 @@ def back(msg="", err="") -> RedirectResponse:
 
 # ---------------------------------------------------------------- routy
 
+def feed_link(cfg) -> str:
+    """Adresa feedu i s tokenem — to, co si člověk zkopíruje do čtečky."""
+    base = (cfg.path("output.base_url", "") or "").rstrip("/")
+    return base + "/feed.xml?token=" + state.feed_token()
+
+
 @app.get("/healthz", include_in_schema=False)
 def healthz():
-    return {"ok": True, "keys": len(keys.load()), "active": keys.active().get("name")}
+    """Jen živost pro dohled — nic, co by se nemělo vědět bez přihlášení."""
+    return {"ok": True}
 
+
+@app.get("/login", response_class=HTMLResponse)
+def login_form(request: Request, err: str = ""):
+    if not auth.enabled():
+        raise HTTPException(503, "administrace je vypnutá: chybí PODCAST_ADMIN_PASSWORD")
+    if auth.valid_session(session_of(request)):
+        return RedirectResponse("/", status_code=303)
+    return HTMLResponse(LOGIN_PAGE.format(
+        css=CSS, next=escape(request.query_params.get("next", "/")),
+        err=('<div class="flash bad">' + escape(err) + "</div>") if err else ""))
+
+
+@app.post("/login")
+def login(request: Request, password: str = Form(""), next: str = Form("/")):
+    if not auth.enabled():
+        raise HTTPException(503, "administrace je vypnutá: chybí PODCAST_ADMIN_PASSWORD")
+    if not auth.check_password(password):
+        import time
+        time.sleep(1.0)                      # brzda proti hádání hesla
+        return RedirectResponse("/login?err=" + "Špatné heslo.", status_code=303)
+    target = next if next.startswith("/") and not next.startswith("//") else "/"
+    resp = RedirectResponse(target, status_code=303)
+    resp.set_cookie(auth.COOKIE, auth.make_session(), httponly=True, samesite="lax",
+                    max_age=auth.TTL, path="/")
+    return resp
+
+
+@app.post("/logout")
+def logout(request: Request, csrf: str = Form("")):
+    check_csrf(csrf, session_of(request))
+    resp = RedirectResponse("/login", status_code=303)
+    resp.delete_cookie(auth.COOKIE, path="/")
+    return resp
+
+
+@app.exception_handler(401)
+def unauthorized(request: Request, exc):
+    """Prohlížeč pošli na přihlášení, čtečce feedu odpověz stavem."""
+    if request.url.path.startswith(("/feed", "/media")):
+        return Response('{"error": "chybí nebo neplatí token"}', status_code=401,
+                        media_type="application/json")
+    from urllib.parse import quote
+    return RedirectResponse("/login?next=" + quote(str(request.url.path)), status_code=303)
+
+
+# ------------------------------------------------- feed a díly (token)
+
+def require_token(request: Request):
+    given = request.query_params.get("token") or request.headers.get("x-feed-token", "")
+    if not auth.valid_feed_token(given):
+        raise HTTPException(401, "chybí nebo neplatí token")
+
+
+@app.get("/feed.xml")
+def feed_xml(request: Request):
+    require_token(request)
+    cfg = config.load()
+    out_dir = cfg.path("output.dir", "out")
+    path = os.path.join(out_dir, "feed.xml")
+    if not os.path.isfile(path):
+        # feed se staví po každém dílu; než první vznikne, postav ho naprázdno
+        path = feedmod.build_feed(out_dir, cfg, state.feed_token())
+    return FileResponse(path, media_type="application/rss+xml")
+
+
+@app.get("/media/{name}")
+def media(name: str, request: Request):
+    require_token(request)
+    out_dir = os.path.abspath(config.load().path("output.dir", "out"))
+    target = os.path.abspath(os.path.join(out_dir, name))
+    if os.path.dirname(target) != out_dir or not os.path.isfile(target):
+        raise HTTPException(404, "takový soubor tu není")     # ../ ven z adresáře nepustí
+    return FileResponse(target)
+
+
+@app.post("/feed/rotate")
+def feed_rotate(request: Request, csrf: str = Form("")):
+    session = require(request)
+    check_csrf(csrf, session)
+    state.rotate("feed_token")
+    cfg = config.load()
+    feedmod.build_feed(cfg.path("output.dir", "out"), cfg, state.feed_token())
+    return back(msg="Token přegenerován. Feed v telefonu přidej znovu s novou adresou.")
+
+
+# --------------------------------------------------------- administrace
 
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
-    require(request)
-    return render(msg=request.query_params.get("msg", ""), err=request.query_params.get("err", ""))
+    session = require(request)
+    return render(session, msg=request.query_params.get("msg", ""),
+                  err=request.query_params.get("err", ""))
 
 
 @app.post("/keys/add")
 def keys_add(request: Request, csrf: str = Form(""), name: str = Form(...), key: str = Form(...),
              url: str = Form(""), note: str = Form("")):
-    require(request)
-    check_csrf(csrf)
+    check_csrf(csrf, require(request))
     try:
         keys.add(name, key, url, note, activate=True)
     except ValueError as exc:
@@ -226,15 +335,13 @@ def keys_add(request: Request, csrf: str = Form(""), name: str = Form(...), key:
 
 @app.post("/keys/activate")
 def keys_activate(request: Request, csrf: str = Form(""), name: str = Form(...)):
-    require(request)
-    check_csrf(csrf)
+    check_csrf(csrf, require(request))
     return back(msg="Aktivní klíč: " + name) if keys.activate(name) else back(err="Klíč neexistuje.")
 
 
 @app.post("/keys/delete")
 def keys_delete(request: Request, csrf: str = Form(""), name: str = Form(...)):
-    require(request)
-    check_csrf(csrf)
+    check_csrf(csrf, require(request))
     return back(msg="Klíč smazán.") if keys.remove(name) else back(err="Klíč neexistuje.")
 
 
@@ -272,8 +379,8 @@ def probe(cfg, url: str, key: str) -> str:
 
 @app.post("/keys/test", response_class=HTMLResponse)
 def keys_test(request: Request, csrf: str = Form(""), name: str = Form(...)):
-    require(request)
-    check_csrf(csrf)
+    session = require(request)
+    check_csrf(csrf, session)
     cfg = config.load()
     entry = keys.find(name)
     if not entry:
@@ -281,7 +388,7 @@ def keys_test(request: Request, csrf: str = Form(""), name: str = Form(...)):
     url = entry.get("url") or config.proxy_url(cfg)[0]
     if not url:
         return back(err="Není kam se ptát: doplň adresu proxy u klíče nebo v konfiguraci.")
-    return render(msg="Test klíče „" + name + "“ proti " + url,
+    return render(session, msg="Test klíče „" + name + "“ proti " + url,
                   detail=probe(cfg, url, entry["key"]))
 
 
@@ -289,8 +396,8 @@ def keys_test(request: Request, csrf: str = Form(""), name: str = Form(...)):
 def keys_create(request: Request, csrf: str = Form(""), admin_key: str = Form(...),
                 new_name: str = Form(...), models: str = Form(""), max_jobs: str = Form("0"),
                 rate: str = Form("0")):
-    require(request)
-    check_csrf(csrf)
+    session = require(request)
+    check_csrf(csrf, session)
     cfg = config.load()
     url = config.proxy_url(cfg)[0]
     if not url:
@@ -309,7 +416,7 @@ def keys_create(request: Request, csrf: str = Form(""), admin_key: str = Form(..
     box = ('<div class="flash good">Klíč „' + escape(new_name) + '“ vyroben a aktivován. '
            'Proxy ho ukazuje jen teď — ulož si ho, jestli ho chceš i jinde:</div>'
            '<div class="keybox">' + escape(plain) + "</div>")
-    return render(detail=probe(cfg, url, plain), new_key=box)
+    return render(session, detail=probe(cfg, url, plain), new_key=box)
 
 
 def _int(value, default=0) -> int:

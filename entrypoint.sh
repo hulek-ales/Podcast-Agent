@@ -12,11 +12,13 @@ if [ ! -f "$CONFIG" ]; then
   exit 1
 fi
 
+# Web = administrace (heslo) + feed s díly (token). Bez hesla neběží ani jedno,
+# ať se hotové díly nikdy nevystaví bez ověření.
 if [ -n "$PODCAST_ADMIN_PASSWORD" ]; then
-  echo "[start] administrace na portu ${ADMIN_PORT:-8089}"
+  echo "[start] web na portu ${ADMIN_PORT:-8089} (administrace + feed)"
   uvicorn podcast.admin:app --host 0.0.0.0 --port "${ADMIN_PORT:-8089}" &
-elif [ -n "$ADMIN_PORT" ]; then
-  echo "[start] administrace vypnutá: chybí PODCAST_ADMIN_PASSWORD"
+else
+  echo "[start] web neběží: chybí PODCAST_ADMIN_PASSWORD (feed ani administrace nejsou dostupné)"
 fi
 
 run() {
@@ -26,7 +28,7 @@ run() {
 
 if [ -z "$RUN_AT" ]; then
   run
-  # s administrací zůstat naživu, ať se dá po prvním běhu doladit klíč
+  # s webem zůstat naživu: feed musí být k dispozici i po dokončení dílu
   [ -n "$PODCAST_ADMIN_PASSWORD" ] && wait
   exit 0
 fi
