@@ -1,0 +1,45 @@
+# Agent nepotřebuje GPU — veškerá práce jde přes ollama-proxy.
+#
+# Dva svazky schválně: /data je soukromé (config.yaml s klíčem, mezivýsledky),
+# /data/public vystavuje web. Kdyby bylo všechno v jednom, nginx by nabídl
+# i config.yaml — tedy klíč k proxy.
+services:
+  podcast-agent:
+    build: .
+    image: podcast-agent:latest
+    container_name: podcast-agent
+    restart: unless-stopped
+    environment:
+      TZ: Europe/Prague
+      RUN_AT: "${RUN_AT:-03:10}"        # prázdné = vyrobit díl hned a skončit
+      PODCAST_PROXY_URL: "${PODCAST_PROXY_URL:-http://ollama-proxy:11435}"
+      PODCAST_PROXY_KEY: "${PODCAST_PROXY_KEY:-}"   # klíč opx_… raději sem než do config.yaml
+    volumes:
+      - podcast_data:/data              # config.yaml + work/ — ven se nedostane
+      - podcast_out:/data/public        # hotové díly a feed.xml
+    networks:
+      - ollamaNet
+
+  # Statické vystavení dílů a feed.xml. Do AntennaPodu pak přidáš
+  # http://server:8088/feed.xml (nebo doménu z output.base_url).
+  podcast-web:
+    image: nginx:alpine
+    container_name: podcast-web
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8088}:80"
+    volumes:
+      - podcast_out:/usr/share/nginx/html:ro
+    networks:
+      - ollamaNet
+
+networks:
+  ollamaNet:
+    name: ollamaNet
+    external: true
+
+volumes:
+  podcast_data:
+    name: podcast_data
+  podcast_out:
+    name: podcast_out
