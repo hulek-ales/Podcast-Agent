@@ -21,7 +21,6 @@ services:
       - '8089:8089'
     environment:
       TZ: Europe/Prague
-      RUN_AT: '03:10'          # kdy vyrábět díl; prázdné = jednou hned a skončit
       ADMIN_PORT: '8089'
       # --- za reverzní proxou (vystavení do internetu) ---
       PODCAST_BEHIND_PROXY: ''        # '1' = věřit X-Forwarded-For/-Proto

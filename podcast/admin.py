@@ -22,10 +22,20 @@ from html import escape
 from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 
-from . import auth, config, feed as feedmod, keys, state
+from . import auth, config, feed as feedmod, keys, runner, shows, state
 from .opx import OpxClient, OpxError
 
 app = FastAPI(title="Podcast agent", docs_url=None, redoc_url=None, openapi_url=None)
+
+
+@app.on_event("startup")
+def _startup():
+    """Z config.yaml udělá první pořad (když ještě žádný není) a rozjede plánovač."""
+    try:
+        shows.bootstrap_from_config(config.load())
+    except SystemExit as exc:
+        print("[pořady] " + str(exc), flush=True)
+    runner.start_scheduler()
 
 
 @app.middleware("http")
@@ -40,7 +50,7 @@ async def security_headers(request: Request, call_next):
     response.headers["Content-Security-Policy"] = (
         "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; "
         "base-uri 'none'; frame-ancestors 'none'")
-    if request.url.path.startswith(("/feed", "/media")):
+    if request.url.path.endswith("/feed.xml") or "/media/" in request.url.path:
         response.headers["Cache-Control"] = "private, max-age=0"
     if auth.is_https(request):
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
@@ -77,7 +87,9 @@ CSS = """
 --fg:#c9d1d9;--fg2:#e6edf3;--mute:#6e7781;--link:#58a6ff;--ok:#3fb950;--warn:#d29922;--bad:#f85149}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
-header{padding:12px 20px;border-bottom:1px solid var(--line);background:var(--bg2);color:var(--fg2);font-weight:600;display:flex;justify-content:space-between;align-items:center}
+header{padding:12px 20px;border-bottom:1px solid var(--line);background:var(--bg2);color:var(--fg2);font-weight:600;display:flex;gap:24px;align-items:center}
+header nav{display:flex;gap:16px;flex:1;font-weight:400}
+header nav a.on{color:var(--fg2);border-bottom:2px solid var(--link)}
 main{max-width:900px;margin:0 auto;padding:22px 20px 60px}
 h1{font-size:16px;margin:0 0 4px;color:var(--fg2)}
 h2{font-size:14px;margin:26px 0 8px;color:var(--fg2)}
@@ -150,7 +162,7 @@ def key_rows(cfg, token: str) -> str:
     return "".join(rows)
 
 
-def page(cfg, session: str, msg="", err="", detail="", new_key="") -> str:
+def settings_page(cfg, session: str, msg="", err="", detail="", new_key="") -> str:
     token = auth.csrf(session)
     key, key_src = config.proxy_key(cfg)
     url, url_src = config.proxy_url(cfg)
@@ -162,10 +174,11 @@ def page(cfg, session: str, msg="", err="", detail="", new_key="") -> str:
     return """<!doctype html><html lang="cs"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Administrace · Podcast agent</title><style>{css}</style></head><body>
-<header><span>Podcast agent — administrace</span>
+<header><span>Podcast agent</span>
+<nav><a href="/" class="{nav_shows}">Pořady</a> <a href="/nastaveni" class="{nav_settings}">Nastavení</a></nav>
 <form method="post" action="/logout"><input type="hidden" name="csrf" value="{token}">
 <button class="link">odhlásit</button></form></header><main>
-<h1>Klíče k Ollama proxy</h1>
+<h1>Nastavení</h1>
 <p class="sub">Klíč je tajemství, proto nežije v <code>config.yaml</code>, ale v
 <code>{store}</code> (práva 600). Agent používá ten označený jako aktivní.</p>
 {msg}{err}{env}{initial}
@@ -179,16 +192,6 @@ def page(cfg, session: str, msg="", err="", detail="", new_key="") -> str:
 {rows}</table>
 {detail}
 
-<h2>Podcastový feed</h2>
-<div class="panel">
-<p class="help" style="margin-top:0">Tuhle adresu vlož do AntennaPodu nebo Pocket Casts. Token v ní
-je jediné, co díly chrání — kdo ho má, stáhne si je.</p>
-<code class="url">{feed_url}</code>
-<p class="help">Hotových dílů: {episodes}</p>
-<form method="post" action="/feed/rotate" onsubmit="return confirm('Přegenerovat token? Feed v telefonu přestane fungovat a budeš ho muset přidat znovu.')">
-<input type="hidden" name="csrf" value="{token}">
-<button class="danger">Přegenerovat token</button></form>
-</div>
 <h2>Adresa proxy</h2>
 <div class="panel"><form method="post" action="/settings/proxy-url">
 <input type="hidden" name="csrf" value="{token}">
@@ -239,13 +242,13 @@ použije se jednou a zapomene.</p>
 <button>Změnit heslo</button></form></div>
 </main></body></html>""".format(
         css=CSS, store=escape(keys.store_path()), rows=key_rows(cfg, token), token=token,
+        nav_shows="", nav_settings="on",
         msg=('<div class="flash good">' + escape(msg) + "</div>") if msg else "",
         err=('<div class="flash bad">' + escape(err) + "</div>") if err else "",
         env=env_note, detail=detail, new_key=new_key,
         initial=('<div class="flash bad">Používáš heslo vygenerované při prvním startu. '
                  'Změň si ho dole — do té doby se vypisuje do logu při každém startu.</div>')
                 if auth.initial_password() else "",
-        feed_url=escape(feed_link(cfg)), episodes=len(feedmod.load_episodes(cfg.path("output.dir", "out"))),
         saved_url=escape(state.load().get("proxy_url", "")), min_pw=auth.MIN_PASSWORD,
         url=escape(url or "—"), url_src=escape(url_src), key_src=escape(key_src),
         masked=escape(keys.mask(key)) if key else "—",
@@ -254,22 +257,16 @@ použije se jednou a zapomene.</p>
 
 def render(session: str, msg="", err="", detail="", new_key="") -> HTMLResponse:
     cfg = config.load()
-    return HTMLResponse(page(cfg, session, msg, err, detail, new_key))
+    return HTMLResponse(settings_page(cfg, session, msg, err, detail, new_key))
 
 
-def back(msg="", err="") -> RedirectResponse:
+def back(msg="", err="", where="/nastaveni") -> RedirectResponse:
     from urllib.parse import urlencode
-    return RedirectResponse("/?" + urlencode({k: v for k, v in (("msg", msg), ("err", err)) if v}),
-                            status_code=303)
+    query = urlencode({k: v for k, v in (("msg", msg), ("err", err)) if v})
+    return RedirectResponse(where + ("?" + query if query else ""), status_code=303)
 
 
 # ---------------------------------------------------------------- routy
-
-def feed_link(cfg) -> str:
-    """Adresa feedu i s tokenem — to, co si člověk zkopíruje do čtečky."""
-    base = (cfg.path("output.base_url", "") or "").rstrip("/")
-    return base + "/feed.xml?token=" + state.feed_token()
-
 
 @app.get("/healthz", include_in_schema=False)
 def healthz():
@@ -331,7 +328,7 @@ def logout(request: Request, csrf: str = Form("")):
 @app.exception_handler(401)
 def unauthorized(request: Request, exc):
     """Prohlížeč pošli na přihlášení, čtečce feedu odpověz stavem."""
-    if request.url.path.startswith(("/feed", "/media")):
+    if request.url.path.endswith("/feed.xml") or "/media/" in request.url.path:
         return Response('{"error": "chybí nebo neplatí token"}', status_code=401,
                         media_type="application/json")
     from urllib.parse import quote
@@ -346,22 +343,30 @@ def require_token(request: Request):
         raise HTTPException(401, "chybí nebo neplatí token")
 
 
-@app.get("/feed.xml")
-def feed_xml(request: Request):
-    require_token(request)
+def show_dir(slug: str):
+    """Adresář dílů pořadu. Slug musí být existující pořad, ne cokoli z adresy."""
     cfg = config.load()
-    out_dir = cfg.path("output.dir", "out")
+    if shows.get(slug) is None:
+        raise HTTPException(404, "takový pořad tu není")
+    return cfg, os.path.abspath(runner.episode_dir(cfg, slug))
+
+
+@app.get("/{slug}/feed.xml")
+def feed_xml(slug: str, request: Request):
+    require_token(request)
+    cfg, out_dir = show_dir(slug)
     path = os.path.join(out_dir, "feed.xml")
     if not os.path.isfile(path):
         # feed se staví po každém dílu; než první vznikne, postav ho naprázdno
-        path = feedmod.build_feed(out_dir, cfg, state.feed_token())
+        path = feedmod.build_feed(out_dir, runner.show_config(cfg, shows.get(slug)),
+                                  state.feed_token())
     return FileResponse(path, media_type="application/rss+xml")
 
 
-@app.get("/media/{name}")
-def media(name: str, request: Request):
+@app.get("/{slug}/media/{name}")
+def media(slug: str, name: str, request: Request):
     require_token(request)
-    out_dir = os.path.abspath(config.load().path("output.dir", "out"))
+    _, out_dir = show_dir(slug)
     target = os.path.abspath(os.path.join(out_dir, name))
     if os.path.dirname(target) != out_dir or not os.path.isfile(target):
         raise HTTPException(404, "takový soubor tu není")     # ../ ven z adresáře nepustí
@@ -408,14 +413,219 @@ def feed_rotate(request: Request, csrf: str = Form("")):
     check_csrf(csrf, session)
     state.rotate("feed_token")
     cfg = config.load()
-    feedmod.build_feed(cfg.path("output.dir", "out"), cfg, state.feed_token())
-    return back(msg="Token přegenerován. Feed v telefonu přidej znovu s novou adresou.")
+    token = state.feed_token()
+    for show in shows.load():            # všechny feedy se přepíšou novým tokenem
+        out_dir = runner.episode_dir(cfg, show["slug"])
+        if os.path.isdir(out_dir):
+            feedmod.build_feed(out_dir, runner.show_config(cfg, show), token)
+    return back(msg="Token přegenerován. Feedy ve čtečce přidej znovu s novou adresou.", where="/")
 
 
 # --------------------------------------------------------- administrace
 
+# ------------------------------------------------------------- pořady
+
+SHOWS_PAGE = """<!doctype html><html lang="cs"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pořady · Podcast agent</title><style>{css}</style></head><body>
+<header><span>Podcast agent</span>
+<nav><a href="/" class="on">Pořady</a> <a href="/nastaveni">Nastavení</a></nav>
+<form method="post" action="/logout"><input type="hidden" name="csrf" value="{token}">
+<button class="link">odhlásit</button></form></header><main>
+<h1>Pořady</h1>
+<p class="sub">Každý pořad má vlastní zdroje, styl, délku, rozvrh a vlastní podcastový
+feed — v telefonu je přidáš jako samostatné podcasty.</p>
+{msg}{err}{running}
+{cards}
+<div class="panel"><div class="help" style="margin-top:0">Adresy feedů chrání společný token.
+Když ho přegeneruješ, všechny pořady musíš ve čtečce přidat znovu.</div>
+<form method="post" action="/feed/rotate">
+<input type="hidden" name="csrf" value="{token}">
+<button class="danger">Přegenerovat token feedů</button></form></div>
+<h2>{form_title}</h2>
+<div class="panel"><form method="post" action="/shows/save">
+<input type="hidden" name="csrf" value="{token}">
+<input type="hidden" name="original" value="{edit_slug}">
+<div class="row">
+  <div class="field"><label for="title">Název</label>
+    <input id="title" name="title" value="{f_title}" required placeholder="Přehled dne"></div>
+  <div class="field"><label for="slug">Identifikátor (v adrese feedu)</label>
+    <input id="slug" name="slug" value="{f_slug}" placeholder="prehled-dne" pattern="[a-z0-9][a-z0-9-]*">
+    <div class="help">Prázdné = odvodí se z názvu. Později ho neměň, feed v telefonu by přestal fungovat.</div></div>
+</div>
+<div class="field"><label for="description">Popis (ukáže se ve čtečce)</label>
+  <input id="description" name="description" value="{f_description}"></div>
+<div class="field"><label for="feeds">Zdroje — jedna adresa na řádek, volitelně <code>adresa | název | váha</code></label>
+  <textarea id="feeds" name="feeds" style="min-height:150px" required>{f_feeds}</textarea>
+  <div class="help">Váha nad 1 téma zvýhodní, pod 1 potlačí. Řádek začínající # se přeskočí.</div></div>
+<div class="field"><label for="prompt_extra">Zadání pro tenhle pořad (nepovinné)</label>
+  <textarea id="prompt_extra" name="prompt_extra" style="min-height:70px">{f_prompt}</textarea>
+  <div class="help">Volný pokyn scénáristovi: „zaměř se na technologie a vynech sport“,
+  „mluv neformálně“, „na konci shrň tři věty, co si odnést“.</div></div>
+<div class="row">
+  <div class="field"><label for="style">Styl</label><select id="style" name="style">{styles}</select></div>
+  <div class="field"><label for="minutes">Délka (min)</label>
+    <input id="minutes" name="minutes" type="number" min="1" max="60" value="{f_minutes}"></div>
+  <div class="field"><label for="stories">Témat</label>
+    <input id="stories" name="stories" type="number" min="1" max="20" value="{f_stories}"></div>
+  <div class="field"><label for="max_age_hours">Stáří článků (h)</label>
+    <input id="max_age_hours" name="max_age_hours" type="number" min="1" max="336" value="{f_age}"></div>
+</div>
+<div class="row">
+  <div class="field"><label for="time">Čas výroby</label>
+    <input id="time" name="time" value="{f_time}" placeholder="03:10" pattern="([01]?[0-9]|2[0-3]):[0-5][0-9]"></div>
+  <div class="field"><label>Dny</label><div style="display:flex;gap:10px;flex-wrap:wrap;padding-top:4px">{days}</div></div>
+</div>
+<div class="row">
+  <div class="field"><label for="voice">Hlas (soubor v TTS službě)</label>
+    <input id="voice" name="voice" value="{f_voice}" placeholder="jirka.wav"></div>
+  <div class="field"><label for="keep_episodes">Nechat dílů (0 = nemazat)</label>
+    <input id="keep_episodes" name="keep_episodes" type="number" min="0" value="{f_keep}"></div>
+  <div class="field"><label style="margin-top:18px"><input type="checkbox" name="enabled" value="1" {f_enabled}> vyrábět podle rozvrhu</label></div>
+</div>
+<button>{submit}</button>{cancel}
+</form></div>
+</main></body></html>"""
+
+
+def show_cards(cfg, token: str) -> str:
+    rows = shows.load()
+    if not rows:
+        return ('<div class="panel mute">Zatím žádný pořad. Založ ho níž — deset ověřených '
+                'zdrojů najdeš v <code>config.example.yaml</code>.</div>')
+    base = (cfg.path("output.base_url", "") or "").rstrip("/")
+    out = []
+    for show in rows:
+        slug = show["slug"]
+        last = runner.last_run(slug)
+        result = runner.status()["last"].get(slug)
+        note = ""
+        if result:
+            note = ('<div class="help ' + ("" if result["ok"] else "bad") + '">poslední běh: '
+                    + escape(result["message"]) + "</div>")
+        episodes = feedmod.load_episodes(runner.episode_dir(cfg, slug))
+        out.append(
+            '<div class="panel"><div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap">'
+            + "<div><b>" + escape(show["title"]) + "</b> "
+            + ('<span class="ok">●</span>' if show.get("enabled") else '<span class="mute">○ vypnutý</span>')
+            + '<div class="help">' + escape(shows.describe_schedule(show)) + " · "
+            + str(len(show["feeds"])) + " zdrojů · " + str(show["minutes"]) + " min · "
+            + str(show["stories"]) + " témat · dílů " + str(len(episodes)) + "</div>"
+            + '<div class="help">naposledy: ' + escape((last or "—").replace("T", " ")) + " · příště: "
+            + escape(shows.next_run(show).strftime("%a %d.%m. %H:%M") if show.get("enabled") else "—")
+            + "</div>" + note + "</div>"
+            + '<div style="white-space:nowrap">'
+            + '<form method="post" action="/shows/' + slug + '/run" style="display:inline">'
+              '<input type="hidden" name="csrf" value="' + token + '">'
+              '<button>vyrobit teď</button></form> '
+            + '<a class="btn" href="/?edit=' + slug + '" style="padding:6px 14px">upravit</a> '
+            + '<form method="post" action="/shows/' + slug + '/delete" style="display:inline" '
+              'onsubmit="return confirm(\'Smazat pořad ' + escape(show["title"]) + ' i s díly?\')">'
+              '<input type="hidden" name="csrf" value="' + token + '">'
+              '<button class="link danger">smazat</button></form>'
+            + "</div></div>"
+            + '<div class="help" style="margin-top:8px">feed pro čtečku:</div>'
+            + '<code class="url">' + escape(base + "/" + slug + "/feed.xml?token=" + state.feed_token())
+            + "</code></div>")
+    return "".join(out)
+
+
+def shows_page(cfg, session: str, msg="", err="", edit: str = "") -> str:
+    token = auth.csrf(session)
+    show = shows.get(edit) if edit else None
+    form = {**shows.DEFAULTS, **(show or {})}
+    running = runner.status()["running"]
+    return SHOWS_PAGE.format(
+        css=CSS, token=token, cards=show_cards(cfg, token),
+        msg=('<div class="flash good">' + escape(msg) + "</div>") if msg else "",
+        err=('<div class="flash bad">' + escape(err) + "</div>") if err else "",
+        running=('<div class="flash">Právě se vyrábí <b>' + escape(running) + "</b> — další běh"
+                 " počká, až doběhne.</div>") if running else "",
+        form_title=("Upravit „" + escape(show["title"]) + "“") if show else "Nový pořad",
+        submit="Uložit" if show else "Založit pořad",
+        cancel=('<a href="/" style="margin-left:12px">zrušit</a>') if show else "",
+        edit_slug=escape(edit or ""),
+        f_title=escape(form["title"] if show else ""),
+        f_slug=escape(form["slug"] if show else ""),
+        f_description=escape(form.get("description", "")),
+        f_feeds=escape(shows.feeds_text(form)),
+        f_prompt=escape(form.get("prompt_extra", "")),
+        f_minutes=form["minutes"], f_stories=form["stories"], f_age=form["max_age_hours"],
+        f_time=escape(str(form["time"])), f_voice=escape(form.get("voice", "")),
+        f_keep=form.get("keep_episodes", 30),
+        f_enabled="checked" if (form.get("enabled", True)) else "",
+        styles="".join('<option value="' + st + '"' + (" selected" if form["style"] == st else "")
+                       + ">" + label + "</option>"
+                       for st, label in (("anchor", "moderátor (souvislý přehled)"),
+                                         ("brief", "brief (headliny, krátce)"),
+                                         ("duo", "dva hlasy (dialog)"))),
+        days="".join('<label style="display:inline"><input type="checkbox" name="days" value="'
+                     + str(i) + '"' + (" checked" if i in (form.get("days") or []) else "") + "> "
+                     + name + "</label>" for i, name in enumerate(shows.DAYS)))
+
+
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
+    session = require(request)
+    return HTMLResponse(shows_page(config.load(), session,
+                                   msg=request.query_params.get("msg", ""),
+                                   err=request.query_params.get("err", ""),
+                                   edit=request.query_params.get("edit", "")))
+
+
+@app.post("/shows/save")
+async def shows_save(request: Request):
+    session = require(request)
+    form = await request.form()
+    check_csrf(form.get("csrf", ""), session)
+    title = (form.get("title") or "").strip()
+    slug = (form.get("slug") or "").strip() or shows.slugify(title)
+    original = (form.get("original") or "").strip()
+    show = {
+        "slug": slug, "title": title,
+        "description": (form.get("description") or "").strip(),
+        "feeds": shows.parse_feeds(form.get("feeds")),
+        "prompt_extra": (form.get("prompt_extra") or "").strip(),
+        "style": form.get("style") or "anchor",
+        "minutes": _int(form.get("minutes"), 9), "stories": _int(form.get("stories"), 7),
+        "max_age_hours": _int(form.get("max_age_hours"), 24),
+        "time": (form.get("time") or "03:10").strip(),
+        "days": [int(d) for d in form.getlist("days") if str(d).isdigit()],
+        "voice": (form.get("voice") or "").strip(),
+        "keep_episodes": _int(form.get("keep_episodes"), 30),
+        "enabled": bool(form.get("enabled")),
+    }
+    if original and original != slug:
+        return back(err="Identifikátor nejde změnit — feed v telefonu by přestal fungovat.", where="/")
+    try:
+        saved = shows.upsert(show)
+    except ValueError as exc:
+        return back(err=str(exc), where="/")
+    return back(msg="Pořad „" + saved["title"] + "“ uložen.", where="/")
+
+
+@app.post("/shows/{slug}/run")
+def shows_run(slug: str, request: Request, csrf: str = Form("")):
+    check_csrf(csrf, require(request))
+    if shows.get(slug) is None:
+        return back(err="Pořad neexistuje.", where="/")
+    busy = runner.status()["running"]
+    if busy:
+        return back(err="Právě se vyrábí " + busy + ", zkus to, až doběhne.", where="/")
+    runner.run_in_background(slug)
+    return back(msg="Výroba spuštěna — potrvá to podle fronty úloh, stav se ukáže tady.", where="/")
+
+
+@app.post("/shows/{slug}/delete")
+def shows_delete(slug: str, request: Request, csrf: str = Form("")):
+    check_csrf(csrf, require(request))
+    if not shows.remove(slug):
+        return back(err="Pořad neexistuje.", where="/")
+    return back(msg="Pořad smazán. Hotové díly zůstaly na disku.", where="/")
+
+
+@app.get("/nastaveni", response_class=HTMLResponse)
+def settings(request: Request):
     session = require(request)
     return render(session, msg=request.query_params.get("msg", ""),
                   err=request.query_params.get("err", ""))

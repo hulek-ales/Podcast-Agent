@@ -1,8 +1,8 @@
 #!/bin/sh
-# Bez RUN_AT vyrobí díl hned a skončí (hodí se na ladění i na cron zvenku).
-# S RUN_AT=03:10 zůstane běžet a spustí se každý den v ten čas — žádný cron
-# démon v kontejneru, jen spánek do dalšího termínu.
-# S PODCAST_ADMIN_PASSWORD navíc běží administrace klíčů na ADMIN_PORT.
+# Kontejner běží pořád: web (administrace + feedy) a v něm plánovač, který
+# vyrábí pořady podle jejich rozvrhu. Kdy co vychází, se nastavuje
+# v administraci u pořadu, ne proměnnou prostředí.
+# RUN_ON_START=1 vyrobí hned po startu to, co má zrovna čas (ladění).
 set -e
 
 # Self-update z Gitu (nepovinné, stejně jako u OllamaProxy): s vyplněným
@@ -78,22 +78,12 @@ uvicorn podcast.admin:app --host 0.0.0.0 --port "${ADMIN_PORT:-8089}" \
   --no-server-header \
   ${PODCAST_BEHIND_PROXY:+--proxy-headers --forwarded-allow-ips="${TRUSTED_PROXY_IPS:-127.0.0.1}"} &
 
-run() {
-  echo "[start] $(date '+%F %T') spouštím díl"
-  python -m podcast.run ${RUN_ARGS:-} || echo "[start] díl selhal (návratový kód $?)"
-}
-
-if [ -z "$RUN_AT" ]; then
-  run
-  wait          # web musí zůstat naživu: feed je potřeba i po dokončení dílu
-  exit 0
+# Kdy se co vyrábí, je u každého pořadu (administrace → Pořady); plánovač běží
+# uvnitř aplikace, takže „vyrobit teď“ a plánovaný běh jdou stejnou cestou
+# a nikdy se nepotkají dva díly naráz.
+if [ -n "$RUN_ON_START" ]; then
+  echo "[start] RUN_ON_START: vyrábím, co má čas"
+  python -m podcast.run --due || echo "[start] běh skončil s chybou"
 fi
 
-echo "[start] denní běh v $RUN_AT (TZ=$TZ)"
-while true; do
-  now=$(date +%s)
-  next=$(date -d "today $RUN_AT" +%s 2>/dev/null || date -d "$RUN_AT" +%s)
-  [ "$next" -le "$now" ] && next=$(date -d "tomorrow $RUN_AT" +%s)
-  sleep $((next - now))
-  run
-done
+wait     # web + plánovač

@@ -16,7 +16,7 @@ services:
     restart: unless-stopped
     environment:
       TZ: Europe/Prague
-      RUN_AT: "${RUN_AT:-03:10}"        # kdy vyrábět díl; prázdné = jednou hned a skončit
+      # kdy co vychází, se nastavuje u pořadu v administraci
       ADMIN_PORT: "8089"
       # --- za reverzní proxou (viz README → Vystavení do internetu) ---
       # Schválně jen v prostředí: kdo může tohle přepnout, obejde zamykání

@@ -38,7 +38,7 @@ USER = """Připrav díl podcastu na {date}.
 Formát: {style}
 Délka: zhruba {minutes} minut mluveného slova (asi {chars} znaků celkem).
 
-Témata v pořadí důležitosti:
+{extra}Témata v pořadí důležitosti:
 
 {topics}
 
@@ -122,9 +122,11 @@ def build(opx, cfg, clusters: list, date_label: str) -> dict:
     """Vrátí díl: {title, intro, segments[{title,text}], outro} už normalizovaný."""
     style = cfg.path("episode.style", "anchor")
     minutes = float(cfg.path("episode.minutes", 9))
+    wish = (cfg.path("episode.prompt_extra") or "").strip()
     prompt = USER.format(
         date=date_label, style=STYLES.get(style, STYLES["anchor"]),
         minutes=int(minutes), chars=int(minutes * 60 * 15),   # ~15 znaků za vteřinu řeči
+        extra=("Zvláštní pokyny k tomuhle pořadu:\n" + wish + "\n\n") if wish else "",
         topics=topics_block(clusters))
     provider = cfg.need("models.script_provider")
     model = cfg.need("models.script")

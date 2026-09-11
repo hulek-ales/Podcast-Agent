@@ -11,7 +11,6 @@ services:
       - '8089:8089'
     environment:
       TZ: Europe/Prague
-      RUN_AT: '03:10'
       ADMIN_PORT: '8089'
       PODCAST_BEHIND_PROXY: ''
       TRUSTED_PROXY_IPS: 127.0.0.1

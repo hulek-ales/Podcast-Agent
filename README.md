@@ -222,15 +222,42 @@ jinak budou odkazy ve feedu ukazovat do LAN a telefon si venku nic nestáhne.
 - **Aktualizace.** Vystavená aplikace chce občas `docker compose build --pull`,
   ať má záplatovaný základ.
 
+## Pořady
+
+Jeden agent dělá **víc pořadů**. Každý má vlastní zdroje, styl, délku, rozvrh
+i vlastní podcastový feed, takže si je v telefonu přidáš jako samostatné podcasty:
+
+| | Přehled dne | Tech týdeník |
+|---|---|---|
+| zdroje | zpravodajské | Ars Technica, HN |
+| styl | moderátor, 9 min | brief, 4 min |
+| kdy | denně 03:10 | neděle 08:00 |
+| zadání | — | „zaměř se na technologie, vynech politiku“ |
+| feed | `…/prehled-dne/feed.xml?token=…` | `…/tech-tydenik/feed.xml?token=…` |
+
+Zakládají se v administraci (**Pořady**) a leží v `shows.json` vedle konfigurace.
+Tlačítko **vyrobit teď** udělá díl mimo rozvrh; běhy se řadí za sebe, protože
+si přes proxy sahají na GPU.
+
+**Zadání pro pořad** je volný text, který se přilepí do pokynů scénáristovi —
+„mluv neformálně“, „na konci shrň tři věty, co si odnést“, „vynech sport“.
+Tím se říká, co má pořad být, aniž by se sahalo do kódu.
+
+Plánovač běží uvnitř aplikace; kontejner nepotřebuje cron ani `RUN_AT`. Pokud
+už máš zdroje v `config.yaml`, udělá se z nich při prvním startu pořad
+`prehled-dne`, takže se nic neztratí.
+
 ## Kroky zvlášť
 
 Mezivýsledky se ukládají do `work/<datum>/`, takže se nemusí opakovat to, co už
 proběhlo (a co stálo peníze):
 
 ```bash
-python -m podcast.run --steps collect,cluster,summarize,script   # bez namluvení
-python -m podcast.run --resume                                   # dodělat zbytek
-python -m podcast.run --date 2026-09-10 --steps feed             # jen přegenerovat feed
+python -m podcast.run --list                       # pořady a jejich rozvrh
+python -m podcast.run --show prehled-dne           # vyrobit díl
+python -m podcast.run --show prehled-dne --steps collect,cluster,summarize,script   # bez namluvení
+python -m podcast.run --show prehled-dne --resume  # dodělat zbytek
+python -m podcast.run --due                        # co má zrovna čas (dělá plánovač sám)
 ```
 
 Vedle každého dílu leží `<datum>.md` se scénářem **a odkazy na zdroje**. Když ti

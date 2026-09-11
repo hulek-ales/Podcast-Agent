@@ -174,7 +174,7 @@ def test_add_activate_delete_through_ui(admin):
     assert r.status_code == 303 and "msg=" in r.headers["location"]
     assert keys.active()["name"] == "podcast"
 
-    page = client.get("/").text
+    page = client.get("/nastaveni").text
     assert "podcast" in page and "denní běh" in page
     assert keys.mask("opx_prvni_klic_123") in page      # klíč se ukazuje jen maskovaný
     assert "opx_prvni_klic_123" not in page
@@ -218,7 +218,7 @@ def test_admin_disabled_until_password_exists(store, monkeypatch):
 
         r = client.post("/login", data={"password": generated}, follow_redirects=False)
         assert r.status_code == 303 and client.cookies.get("podcast_admin")
-        assert "vygenerované při prvním startu" in client.get("/").text
+        assert "vygenerované při prvním startu" in client.get("/nastaveni").text
 
         auth.set_password("vlastni-dlouhe-heslo")      # vlastní heslo výpis umlčí
         assert auth.initial_password() == "" and auth.bootstrap() == ""
@@ -411,24 +411,32 @@ def test_create_key_refuses_client_key(admin, proxy):
 
 # ------------------------------------------------------- feed a díly
 
+SLUG = "prehled-dne"
+
+
 @pytest.fixture
 def episodes(store, admin):
-    """Jeden hotový díl v output.dir a feed k němu."""
-    from podcast import config, feed as feedmod, state
+    """Pořad s jedním hotovým dílem a feedem."""
+    from podcast import config, feed as feedmod, runner, shows, state
     out = store / "public"
     out.mkdir()
-    cfg = config.load()
-    cfg["output"] = {"dir": str(out), "base_url": "http://server:8089"}
-    audio = out / "2026-09-11.mp3"
-    audio.write_bytes(b"ID3" + b"\0" * 50)
-    feedmod.save_episode(str(out), "2026-09-11", {"title": "Přehled dne", "segments": []},
-                         str(audio), "# Přehled\n")
-    feedmod.build_feed(str(out), cfg, state.feed_token())
     (store / "config.yaml").write_text(
         "proxy: {url: 'http://proxy.test:11435'}\n"
         "models: {embed: nomic-embed-text, summarize: gemma4:12b, script: gpt-5-mini,"
         " script_provider: openai, tts: tts-cs}\n"
         "output: {dir: '" + str(out) + "', base_url: 'http://server:8089'}\n", encoding="utf-8")
+    shows.upsert({"slug": SLUG, "title": "Přehled dne", "style": "anchor", "time": "03:10",
+                  "days": [0, 1, 2, 3, 4, 5, 6],
+                  "feeds": [{"url": "https://ct24.ceskatelevize.cz/rss/hlavni-zpravy"}]})
+    cfg = config.load()
+    show_dir = runner.episode_dir(cfg, SLUG)
+    os.makedirs(show_dir, exist_ok=True)
+    audio = os.path.join(show_dir, "2026-09-11.mp3")
+    with open(audio, "wb") as f:
+        f.write(b"ID3" + b"\0" * 50)
+    feedmod.save_episode(show_dir, "2026-09-11", {"title": "Přehled dne", "segments": []},
+                         audio, "# Přehled\n")
+    feedmod.build_feed(show_dir, runner.show_config(cfg, shows.get(SLUG)), state.feed_token())
     return out
 
 
@@ -437,18 +445,20 @@ def test_feed_and_media_need_token(admin, episodes):
     from podcast import state
     token = state.feed_token()
 
-    assert client.get("/feed.xml").status_code == 401         # ani přihlášení nestačí
-    assert client.get("/media/2026-09-11.mp3").status_code == 401
-    assert client.get("/feed.xml?token=spatny").status_code == 401
+    assert client.get("/" + SLUG + "/feed.xml").status_code == 401   # ani přihlášení nestačí
+    assert client.get("/" + SLUG + "/media/2026-09-11.mp3").status_code == 401
+    assert client.get("/" + SLUG + "/feed.xml?token=spatny").status_code == 401
+    # neexistující pořad nedá nic ani se správným tokenem
+    assert client.get("/neexistuje/feed.xml?token=" + token).status_code == 404
 
-    r = client.get("/feed.xml?token=" + token)
+    r = client.get("/" + SLUG + "/feed.xml?token=" + token)
     assert r.status_code == 200 and r.headers["content-type"].startswith("application/rss+xml")
-    assert ("/media/2026-09-11.mp3?token=" + token) in r.text
+    assert ("/" + SLUG + "/media/2026-09-11.mp3?token=" + token) in r.text
 
-    r = client.get("/media/2026-09-11.mp3?token=" + token)
+    r = client.get("/" + SLUG + "/media/2026-09-11.mp3?token=" + token)
     assert r.status_code == 200 and r.content.startswith(b"ID3")
     # token jde poslat i hlavičkou (skripty, curl)
-    assert client.get("/feed.xml", headers={"X-Feed-Token": token}).status_code == 200
+    assert client.get("/" + SLUG + "/feed.xml", headers={"X-Feed-Token": token}).status_code == 200
 
 
 def test_media_refuses_path_traversal(admin, episodes, store):
@@ -457,7 +467,7 @@ def test_media_refuses_path_traversal(admin, episodes, store):
     token = "?token=" + state.feed_token()
     (store / "config.yaml").chmod(0o600)
     for name in ("../config.yaml", "..%2fconfig.yaml", "../../etc/passwd", "sub/../../keys.json"):
-        r = client.get("/media/" + name + token)
+        r = client.get("/" + SLUG + "/media/" + name + token)
         assert r.status_code in (401, 404), name
         assert b"proxy" not in r.content and b"opx_" not in r.content
 
@@ -470,8 +480,8 @@ def test_rotate_token_invalidates_old_feed(admin, episodes):
     assert r.status_code == 303 and "msg=" in r.headers["location"]
     new = state.feed_token()
     assert new != old
-    assert client.get("/feed.xml?token=" + old).status_code == 401
-    r = client.get("/feed.xml?token=" + new)
+    assert client.get("/" + SLUG + "/feed.xml?token=" + old).status_code == 401
+    r = client.get("/" + SLUG + "/feed.xml?token=" + new)
     assert r.status_code == 200 and new in r.text and old not in r.text
 
 
@@ -479,8 +489,8 @@ def test_admin_page_shows_feed_url(admin, episodes):
     client, _ = admin
     from podcast import state
     page = client.get("/").text
-    assert ("http://server:8089/feed.xml?token=" + state.feed_token()) in page
-    assert "Hotových dílů: 1" in page
+    assert ("http://server:8089/" + SLUG + "/feed.xml?token=" + state.feed_token()) in page
+    assert "Přehled dne" in page and "dílů 1" in page
 
 
 # ------------------------------------ vystavení do internetu
@@ -538,7 +548,7 @@ def test_admin_can_be_limited_to_networks_but_feed_stays_open(admin, episodes, m
     assert client.get("/login").status_code == 403
     assert client.post("/login", data={"password": PASSWORD}).status_code == 403
     # feed chrání token, ten zůstává dostupný odkudkoli
-    assert client.get("/feed.xml?token=" + state.feed_token()).status_code == 200
+    assert client.get("/" + SLUG + "/feed.xml?token=" + state.feed_token()).status_code == 200
 
     monkeypatch.setenv("PODCAST_ADMIN_ALLOW", "127.0.0.0/8")
     assert client.get("/").status_code == 200
