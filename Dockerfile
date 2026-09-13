@@ -13,6 +13,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 RUN sha256sum /app/requirements.txt | cut -c1-16 > /app/.req-stamp
 
+# Commit a čas buildu — administrace je ukazuje v patičce, takže po restartu
+# appky je na první pohled vidět, jestli se natáhl nový image, nebo běží starý.
+ARG BUILD_REV=dev
+ARG BUILD_TIME=""
+ENV PODCAST_BUILD_REV=$BUILD_REV PODCAST_BUILD_TIME=$BUILD_TIME
+
 COPY podcast /app/podcast
 COPY config.example.yaml entrypoint.sh /app/
 RUN chmod +x /app/entrypoint.sh

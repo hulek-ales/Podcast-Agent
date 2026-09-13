@@ -28,20 +28,25 @@ RSS ──► sběr ──► shluky ──► shrnutí ──► scénář ─�
 
 ```bash
 git clone https://github.com/hulek-ales/Podcast-Agent.git && cd Podcast-Agent
-cp config.example.yaml config.yaml     # uprav zdroje, modely a output.base_url
-export PODCAST_PROXY_KEY=opx_…         # klíč z proxy (GUI → API klíče)
 pip install -r requirements.txt
+PODCAST_ADMIN_PASSWORD=… uvicorn podcast.admin:app --port 8089
+# zbytek (klíč k proxy, modely, zdroje, rozvrh) se naklikáš v administraci
+```
 
+Žádný `config.yaml` být nemusí: agent naběhne na výchozích hodnotách a všechno
+ostatní se nastavuje v administraci (**Nastavení → Chování agenta**). Soubor je
+jen pro toho, kdo si nastavení chce verzovat — hodnota z administrace má vždy
+přednost. Z příkazové řádky pak:
+
+```bash
 python -m podcast.run --check          # odpovídá proxy? vidí klíč všechny modely?
-python -m podcast.run                  # vyrobí díl
+python -m podcast.run --show prehled-dne
 ```
 
 V Dockeru (vedle proxy, síť `ollamaNet`):
 
 ```bash
 docker compose up -d --build
-# poprvé se do svazku zkopíruje vzor konfigurace a kontejner skončí — uprav ji a restartuj
-docker compose restart podcast-agent
 docker compose logs podcast-agent | grep -A 3 HESLO    # heslo do administrace
 ```
 
@@ -298,20 +303,59 @@ Vedle každého dílu leží `<datum>.md` se scénářem **a odkazy na zdroje**.
 v autě něco přijde divné, ověříš to za deset vteřin — u automaticky psaných zpráv
 to není luxus, ale nutnost.
 
-## Konfigurace
+## Nastavení
 
-Celá je v `config.yaml` (vzor v `config.example.yaml`), komentovaná. Co se mění
-nejčastěji:
+Všechno se nastavuje v administraci, do souborů sahat nemusíš:
 
-- `feeds` — zdroje a jejich váha. Deset ověřených tam je předvyplněno.
-- `episode.stories` / `episode.minutes` — kolik témat a jak dlouhý díl.
-- `episode.style` — `anchor` (jeden moderátor), `brief` (3 minuty headlinů),
-  `duo` (dva hlasy).
-- `episode.similarity` — práh shlukování. Když se ti slévají různá témata, zvyš;
-  když se stejná zpráva objeví dvakrát, sniž.
-- `models.*` — které modely na co. `script` a `script_provider` míří na
-  komerční API, zbytek je lokální.
-- `tts.mode` — `job` (přes frontu, doporučeno) nebo `direct` (drží spojení).
+| kde | co |
+|---|---|
+| **Pořady** → upravit | zdroje a jejich váha, styl, délka, počet témat, rozvrh, hlas, zadání pro scénáristu |
+| **Nastavení** → Chování agenta | modely, fronta úloh, hlas, veřejná adresa, autor feedu, timeouty |
+| **Nastavení** → Klíče | klíč k proxy a její adresa |
+| **Díly** | co se vyrobilo, průběh běhu, mazání |
+
+Hodnota se hledá ve třech vrstvách: **administrace → `config.yaml` → výchozí
+hodnoty v `podcast/settings.py`**. Prázdné pole v administraci znamená „neřeším
+to“ a propadne o patro níž, takže nová verze může výchozí hodnoty vylepšit, aniž
+by se držely ty staré. U každého pole je vidět, co zrovna platí a odkud to je.
+
+Co se mění nejčastěji:
+
+- **zdroje** a jejich váha (u pořadu). Deset ověřených je v novém pořadu předvyplněno.
+- **počet témat** a **délka** dílu (u pořadu).
+- **styl** — `anchor` (jeden moderátor), `brief` (3 minuty headlinů), `duo` (dva hlasy).
+- **práh shlukování** — když se ti slévají různá témata, zvyš; když se stejná
+  zpráva objeví dvakrát, sniž.
+- **modely** — `script` míří na komerční API, zbytek je lokální.
+- **veřejná adresa agenta** — z ní se skládají odkazy na zvuk ve feedu. Bez ní si
+  telefon mimo domov díl nestáhne.
+
+## Díly a průběh
+
+Záložka **Díly** je deník výroby: jeden řádek na každý den každého pořadu —
+hotový díl ve feedu, rozepsaný text, i den, který se rozbil v půlce a nic po sobě
+nenechal. Detail dne ukáže **každý dotaz do proxy** (model, co se poslalo, jak
+dlouho to trvalo, kolik tokenů to stálo) a hlavně poslední dotaz, na který ještě
+nepřišla odpověď — to je přesně to místo, kde běh visí.
+
+Odtud se taky spouští: *napsat text znovu*, *namluvit z hotového textu*, *vyrobit
+celý díl znovu*, a maže: rozdělaná práce, nebo hotový díl i s přestavěním feedu.
+
+Stopa se zapisuje po řádcích do `work/<pořad>/<datum>/trace.jsonl`, takže jde
+číst i během běhu a pád procesu nezničí, co už se stihlo.
+
+## Která verze běží
+
+Patička každé stránky administrace hlásí commit, čas buildu a čas startu:
+
+```
+verze a1b2c3d4 · postaveno 2026-09-13 08:49 · image · start 13.09. 09:16:51
+```
+
+Commit se do image zapéká při buildu v GitHub Actions. Po restartu appky tedy
+stačí načíst administraci a porovnat: když se commit i čas startu změnily, natáhl
+se nový image; když se změnil jen čas startu, TrueNAS pustil ten starý (zkontroluj
+`pull_policy: always`, nebo v Apps dej *Pull image*).
 
 ## Co je dobré vědět
 

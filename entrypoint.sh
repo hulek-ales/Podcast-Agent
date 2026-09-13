@@ -40,15 +40,12 @@ if [ -n "${REPO_URL:-}" ]; then
   fi
 fi
 
+# config.yaml je nepovinný: bez něj jede agent na výchozích hodnotách a
+# všechno ostatní se nastaví v administraci (Nastavení → Chování agenta).
 CONFIG="${PODCAST_CONFIG:-/data/config.yaml}"
-if [ ! -f "$CONFIG" ]; then
-  # vzor z běžícího kódu (po self-update je v /app/src), jinak ten z image
-  EXAMPLE=./config.example.yaml
-  [ -f "$EXAMPLE" ] || EXAMPLE=/app/config.example.yaml
-  echo "[start] chybí $CONFIG, kopíruji vzor — uprav ho a restartuj"
-  cp "$EXAMPLE" "$CONFIG"
-  exit 1
-fi
+[ -f "$CONFIG" ] || echo "[start] $CONFIG není — jedu na výchozích hodnotách, zbytek nastav v administraci"
+
+echo "[start] $(python -c 'from podcast import version; print(version.line())')"
 
 # Web = administrace (heslo) + feed s díly (token). Heslo si agent drží sám;
 # při prvním startu vyrobí náhodné a vypíše ho sem do logu.

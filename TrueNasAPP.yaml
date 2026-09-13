@@ -11,6 +11,11 @@
 #
 # Hesla ani klíče tu nejsou schválně — heslo do administrace se vyrobí při
 # prvním startu a najdeš ho v logu appky, klíč k proxy zadáš v administraci.
+# Nastavení agenta (modely, zdroje, rozvrh, veřejná adresa) se taky celé kliká
+# v administraci; žádný config.yaml do svazku kopírovat nemusíš.
+#
+# Po aktualizaci si ověříš, že se opravdu natáhl nový image, v patičce
+# administrace: je tam commit, čas buildu a čas startu.
 services:
   podcast-agent:
     image: ghcr.io/hulek-ales/podcast-agent:latest

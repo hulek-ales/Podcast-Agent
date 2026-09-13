@@ -15,15 +15,20 @@ import threading
 import traceback
 from datetime import datetime
 
-from . import cluster, collect, config, feed as feedmod, script, shows, speak, state, summarize
+from . import (cluster, collect, config, feed as feedmod, script, shows, speak, state,
+               summarize, trace)
 
 _lock = threading.Lock()          # jeden díl v jednu chvíli
 _current = None                   # slug běžícího pořadu
+_current_stamp = ""               # datum dílu, který se zrovna vyrábí
+_since = None                     # odkdy běží
 _log = {}                         # slug → poslední výsledek
 
 
 def status() -> dict:
-    return {"running": _current, "last": dict(_log)}
+    return {"running": _current, "stamp": _current_stamp,
+            "since": _since.isoformat(timespec="seconds") if _since else "",
+            "last": dict(_log)}
 
 
 def show_config(cfg, show: dict):
@@ -60,6 +65,7 @@ def run_show(slug: str, day: datetime = None, steps: tuple = None, resume: bool 
         return _done(slug, False, "pořad neexistuje")
     with _lock:
         _current = slug
+        _mark_start(day or datetime.now())
         try:
             return _produce(show, day or datetime.now(), steps, resume)
         except SystemExit as exc:
@@ -69,12 +75,21 @@ def run_show(slug: str, day: datetime = None, steps: tuple = None, resume: bool 
             return _done(slug, False, exc.__class__.__name__ + ": " + str(exc))
         finally:
             _current = None
+            _mark_start(None)
+
+
+def _mark_start(day):
+    global _current_stamp, _since
+    _current_stamp = day.strftime("%Y-%m-%d") if day else ""
+    _since = datetime.now() if day else None
 
 
 def _done(slug: str, ok: bool, message: str) -> dict:
     result = {"ok": ok, "slug": slug, "message": message,
               "at": datetime.now().isoformat(timespec="seconds")}
     _log[slug] = result
+    trace.write({"kind": "step", "op": "konec", "ok": ok, "note": message})
+    trace.end()
     print("[běh] " + slug + ": " + ("hotovo — " if ok else "CHYBA — ") + message, flush=True)
     return result
 
@@ -84,14 +99,16 @@ def _produce(show: dict, day: datetime, steps, resume: bool) -> dict:
     steps = steps or STEPS
     slug = show["slug"]
     cfg = show_config(config.load(), show)
-    opx = config.client(cfg)
     stamp = day.strftime("%Y-%m-%d")
     work = Work(cfg.path("output.work_dir"), stamp, resume)
     out_dir = cfg.path("output.dir")
-    print("[běh] " + slug + " (" + show["title"] + "), " + stamp, flush=True)
+    trace.begin(work.dir)
+    trace.step("běh", show["title"] + ", " + stamp + ", kroky: " + ", ".join(steps))
+    opx = trace.Traced(config.client(cfg))
 
     articles = work.load("collect")
     if articles is None:
+        trace.step("sběr", str(len(cfg.need("feeds"))) + " zdrojů")
         articles = collect.collect(cfg.need("feeds"), float(cfg.path("episode.max_age_hours", 24)))
         if not articles:
             return _done(slug, False, "žádné články ze zdrojů")
@@ -99,6 +116,8 @@ def _produce(show: dict, day: datetime, steps, resume: bool) -> dict:
 
     clusters = work.load("cluster")
     if clusters is None:
+        trace.step("shlukování", str(len(articles)) + " článků → "
+                   + str(cfg.path("episode.stories", 7)) + " témat")
         clusters = cluster.build(opx, cfg.need("models.embed"), articles,
                                  int(cfg.path("episode.stories", 7)),
                                  float(cfg.path("episode.similarity", 0.80)))
@@ -109,6 +128,7 @@ def _produce(show: dict, day: datetime, steps, resume: bool) -> dict:
 
     summaries = work.load("summarize")
     if summaries is None:
+        trace.step("shrnutí", str(len(clusters)) + " témat přes frontu úloh")
         summaries = summarize.run(opx, cfg.need("models.summarize"), clusters,
                                   priority=int(cfg.path("jobs.priority", 7)),
                                   poll=float(cfg.path("jobs.poll_s", 10)),
@@ -119,6 +139,8 @@ def _produce(show: dict, day: datetime, steps, resume: bool) -> dict:
 
     episode = work.load("script")
     if episode is None:
+        trace.step("scénář", str(cfg.path("models.script")) + " ("
+                   + str(cfg.path("models.script_provider") or "ollama") + ")")
         episode = script.build(opx, cfg, summaries, date_label(day))
         work.save("script", episode)
     with open(os.path.join(work.dir, "scenar.md"), "w", encoding="utf-8") as f:
@@ -127,6 +149,8 @@ def _produce(show: dict, day: datetime, steps, resume: bool) -> dict:
     if "speak" in steps:
         audio = os.path.join(out_dir, stamp + "." + str(cfg.path("episode.response_format", "mp3")))
         if not (resume and os.path.isfile(audio)):
+            trace.step("hlas", str(cfg.path("models.tts")) + ", "
+                       + str(len(script.spoken_text(episode))) + " znaků")
             speak.synthesize(opx, cfg, script.spoken_text(episode), audio)
         feedmod.save_episode(out_dir, stamp, episode, audio, script.as_markdown(episode))
         token = state.feed_token()
@@ -229,3 +253,74 @@ def discard_draft(cfg, slug: str, stamp: str) -> bool:
 def published(cfg, slug: str, stamp: str) -> bool:
     """Je k tomu dni hotový zvuk (a tedy díl ve feedu)?"""
     return any(m["slug"] == stamp for m in feedmod.load_episodes(episode_dir(cfg, slug)))
+
+
+# ------------------------------------------------------------ přehled dílů
+
+def episodes(cfg, slug: str) -> list:
+    """Jeden řádek na každý den: hotový díl, rozepsaný text, i běh, co spadl.
+
+    Hotové díly leží v `output.dir`, rozdělaná práce v `output.work_dir` — tady
+    se to spojí do jednoho seznamu, ať je vidět i den, který se rozbil někde
+    v půlce a žádný díl po sobě nenechal."""
+    out_dir = episode_dir(cfg, slug)
+    root = work_dir(cfg, slug)
+    rows = {}
+    for meta in feedmod.load_episodes(out_dir):
+        rows[meta["slug"]] = {"stamp": meta["slug"], "title": meta.get("title", ""),
+                              "published": meta.get("published", ""), "bytes": meta.get("bytes", 0),
+                              "audio": meta.get("audio", ""), "topics": meta.get("topics", []),
+                              "state": "ve feedu", "steps": [], "activity": ""}
+    for stamp in sorted(os.listdir(root), reverse=True) if os.path.isdir(root) else []:
+        day_dir = os.path.join(root, stamp)
+        if not os.path.isdir(day_dir):
+            continue
+        steps = [name[:-5] for name in ("collect.json", "cluster.json", "summarize.json",
+                                        "script.json") if os.path.isfile(os.path.join(day_dir, name))]
+        row = rows.setdefault(stamp, {"stamp": stamp, "title": "", "published": "", "bytes": 0,
+                                      "audio": "", "topics": [], "state": "", "steps": []})
+        row["steps"] = steps
+        row["activity"] = _mtime(day_dir)
+        row["work"] = True
+        if not row["state"]:
+            row["state"] = "text hotový" if "script" in steps else "rozdělaný"
+        if "script" in steps and not row["audio"]:
+            title = (draft(cfg, slug, stamp) or (None, {}))[1].get("title", "")
+            row["title"] = row["title"] or title
+    status_now = status()
+    for row in rows.values():
+        if status_now["running"] == slug and status_now["stamp"] == row["stamp"]:
+            row["state"] = "právě běží"
+    return sorted(rows.values(), key=lambda r: r["stamp"], reverse=True)
+
+
+def _mtime(path: str) -> str:
+    try:
+        newest = max(os.path.getmtime(os.path.join(path, n)) for n in os.listdir(path)) \
+            if os.listdir(path) else os.path.getmtime(path)
+        return datetime.fromtimestamp(newest).isoformat(timespec="seconds")
+    except (OSError, ValueError):
+        return ""
+
+
+def progress(cfg, slug: str, stamp: str) -> dict:
+    """Stopa běhu k jednomu dni: řádky a dotaz, na kterém to případně visí."""
+    rows = trace.read(os.path.join(work_dir(cfg, slug), stamp))
+    return {"rows": rows, "pending": trace.pending(rows)}
+
+
+def delete_episode(cfg, slug: str, stamp: str) -> bool:
+    """Smaže hotový díl (zvuk, scénář, metadata) a postaví feed znovu."""
+    out_dir = episode_dir(cfg, slug)
+    found = [m for m in feedmod.load_episodes(out_dir) if m["slug"] == stamp]
+    if not found:
+        return False
+    for name in (found[0].get("audio"), found[0].get("script"), stamp + ".json"):
+        try:
+            os.remove(os.path.join(out_dir, name))
+        except OSError:
+            pass
+    show = shows.get(slug)
+    if show:
+        feedmod.build_feed(out_dir, show_config(cfg, show), state.feed_token())
+    return True

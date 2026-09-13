@@ -1,8 +1,13 @@
-# Zkopíruj na config.yaml a uprav.
+# TENHLE SOUBOR NENÍ POTŘEBA.
 #
-# Adresu ani klíč proxy sem psát nemusíš — obojí se nastavuje v administraci
-# (ukládá se do state.json a keys.json vedle tohohle souboru, práva 600).
-# Pořadí, ve kterém se hledá: administrace → prostředí → tenhle soubor.
+# Všechno se nastavuje v administraci (Nastavení → Chování agenta, a u pořadu
+# zdroje a rozvrh); bez souboru agent naběhne na výchozích hodnotách z
+# podcast/settings.py. Pořadí, ve kterém se hodnota hledá:
+#
+#     administrace  →  tenhle soubor  →  výchozí hodnoty v kódu
+#
+# Soubor se hodí jedině tomu, kdo si nastavení chce verzovat v Gitu. Klíč k proxy
+# sem nepatří vůbec (ukládá se do keys.json vedle, práva 600).
 
 proxy:
   url: ""                        # záloha, když není v administraci ani v prostředí

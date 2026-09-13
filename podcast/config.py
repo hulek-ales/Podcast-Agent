@@ -1,6 +1,10 @@
-"""Konfigurace z YAML (config.yaml vedle kódu, nebo PODCAST_CONFIG).
+"""Konfigurace: výchozí hodnoty → config.yaml (nepovinný) → administrace.
 
-Adresa a klíč proxy se hledají takhle, první nalezené vyhrává:
+Nic se nemusí nastavovat v souborech — `config.yaml` je jen záloha pro toho,
+kdo si nastavení chce verzovat. Když neexistuje, agent naběhne na výchozích
+hodnotách z `settings.DEFAULTS` a zbytek se doklikne v administraci.
+
+Adresa a klíč proxy jdou stranou, protože klíč je tajemství:
 
   1. administrace — aktivní klíč (keys.json) a adresa uložená ve state.json,
   2. prostředí (PODCAST_PROXY_KEY / PODCAST_PROXY_URL),
@@ -14,7 +18,7 @@ import os
 
 import yaml
 
-from . import keys, state
+from . import keys, settings, state
 
 def default_path() -> str:
     """Čte se při každém volání, ne při importu — jinak by se prostředí
@@ -36,7 +40,8 @@ class Config(dict):
     def need(self, dotted: str):
         value = self.path(dotted)
         if value in (None, ""):
-            raise SystemExit("chybí v konfiguraci: " + dotted)
+            raise SystemExit("chybí nastavení „" + dotted + "“ — doplň ho v administraci "
+                         "(Nastavení → Chování agenta)")
         return value
 
 
@@ -78,10 +83,19 @@ def client(cfg: Config):
     return OpxClient(url, key, timeout=float(cfg.path("proxy.timeout_s", 900)))
 
 
-def load(path: str = None) -> Config:
+def from_file(path: str = None) -> dict:
+    """Obsah config.yaml, nebo prázdno, když soubor není (což je v pořádku)."""
     path = path or default_path()
     if not os.path.isfile(path):
-        raise SystemExit("konfigurace nenalezena: " + path + " (zkopíruj config.example.yaml)")
-    with open(path, encoding="utf-8") as f:
-        data = yaml.safe_load(f) or {}
-    return Config(data)
+        return {}
+    try:
+        with open(path, encoding="utf-8") as f:
+            return yaml.safe_load(f) or {}
+    except (OSError, ValueError) as exc:
+        print("[config] " + path + " se nepodařilo přečíst: " + str(exc), flush=True)
+        return {}
+
+
+def load(path: str = None) -> Config:
+    """Nastavení, které opravdu platí — i bez jediného souboru na disku."""
+    return Config(settings.apply(from_file(path)))

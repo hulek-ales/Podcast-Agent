@@ -39,6 +39,10 @@ jobs:
         with:
           context: .
           push: true
+          # zapeče se do image a administrace to ukáže v patičce
+          build-args: |
+            BUILD_REV=${{ github.sha }}
+            BUILD_TIME=${{ github.event.head_commit.timestamp }}
           tags: ${{ steps.image.outputs.name }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max

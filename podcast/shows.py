@@ -45,10 +45,25 @@ DEFAULTS = {
     "feeds": [],
 }
 
+# Ověřené zdroje pro nový pořad — ať se nový pořad nezakládá do prázdna
+# a nikdo nemusí hledat adresy v souboru s příkladem.
+STARTER_FEEDS = [
+    {"url": "https://ct24.ceskatelevize.cz/rss/hlavni-zpravy", "name": "ČT24", "weight": 1.3},
+    {"url": "https://www.irozhlas.cz/rss/irozhlas", "name": "iRozhlas", "weight": 1.3},
+    {"url": "https://www.seznamzpravy.cz/rss", "name": "Seznam Zprávy", "weight": 1.1},
+    {"url": "https://www.novinky.cz/rss", "name": "Novinky", "weight": 1.0},
+    {"url": "https://www.aktualne.cz/rss/", "name": "Aktuálně", "weight": 1.0},
+    {"url": "https://servis.idnes.cz/rss.aspx?c=zpravodaj", "name": "iDNES", "weight": 1.0},
+    {"url": "https://feeds.bbci.co.uk/news/world/rss.xml", "name": "BBC World", "weight": 1.2},
+    {"url": "https://www.theguardian.com/world/rss", "name": "The Guardian", "weight": 1.1},
+    {"url": "https://feeds.arstechnica.com/arstechnica/index", "name": "Ars Technica", "weight": 0.8},
+    {"url": "https://hnrss.org/frontpage", "name": "Hacker News", "weight": 0.7},
+]
+
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
 # cesty administrace — pořad s takovým identifikátorem by je přebil
 RESERVED = {"login", "logout", "keys", "settings", "feed", "media", "healthz", "shows",
-            "run", "static", "api", "docs"}
+            "run", "static", "api", "docs", "dily", "nastaveni"}
 
 
 def path() -> str:
@@ -225,9 +240,7 @@ def bootstrap_from_config(cfg) -> dict:
     nastavení (zdroje, styl, délka) nepřijde vniveč a agent má co vyrábět."""
     if load():
         return {}
-    feeds = cfg.path("feeds") or []
-    if not feeds:
-        return {}
+    feeds = cfg.path("feeds") or STARTER_FEEDS
     episode = cfg.path("episode") or {}
     show = {**DEFAULTS, "slug": "prehled-dne",
             "title": cfg.path("feed.title", "Přehled dne"),
@@ -238,6 +251,6 @@ def bootstrap_from_config(cfg) -> dict:
         if episode.get(key) not in (None, ""):
             show[key] = episode[key]
     save([show])
-    print("[pořady] z config.yaml vytvořen pořad '" + show["slug"] + "' ("
-          + str(len(feeds)) + " zdrojů)", flush=True)
+    print("[pořady] vytvořen první pořad '" + show["slug"] + "' ("
+          + str(len(feeds)) + " zdrojů) — uprav ho v administraci", flush=True)
     return show
