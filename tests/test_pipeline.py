@@ -219,3 +219,63 @@ def test_feed_can_be_built_before_any_episode_exists(tmp_path):
     xml = open(path, encoding="utf-8").read()
     assert "<title>Přehled dne</title>" in xml and "<item>" not in xml   # platný, jen prázdný
     assert feed.load_episodes(out) == []
+
+
+def test_commercial_tts_never_sends_language(tmp_path):
+    """OpenAI pole `language` nezná a na neznámé pole vrátí HTTP 400 —
+    tón se místo toho říká větou v `instructions`."""
+    from podcast import speak
+    from podcast.config import Config
+
+    sent = []
+
+    class FakeOpx:
+        def speak(self, model, text, provider="", **extra):
+            sent.append(extra)
+            return b"MP3"
+
+    cfg = Config({"models": {"tts": "gpt-4o-mini-tts", "tts_provider": "openai"},
+                  "episode": {"voice": "nova", "language": "cs", "response_format": "mp3",
+                              "speed": 1.0},
+                  "tts": {"mode": "direct", "instructions": "Čti česky, klidně."}})
+    speak.synthesize(FakeOpx(), cfg, "Krátký text.", str(tmp_path / "a.mp3"))
+    assert "language" not in sent[0]
+    assert sent[0]["instructions"] == "Čti česky, klidně."
+    assert sent[0]["voice"] == "nova" and sent[0]["speed"] == 1.0
+
+
+def test_commercial_tts_fills_in_a_voice(tmp_path):
+    """Hlas je u komerčního API povinný; prázdný by skončil chybou už na prvním kuse."""
+    from podcast import speak
+    from podcast.config import Config
+
+    sent = []
+
+    class FakeOpx:
+        def speak(self, model, text, provider="", **extra):
+            sent.append(extra)
+            return b"MP3"
+
+    cfg = Config({"models": {"tts": "gpt-4o-mini-tts", "tts_provider": "openai"},
+                  "episode": {"voice": ""}, "tts": {"mode": "direct", "instructions": ""}})
+    speak.synthesize(FakeOpx(), cfg, "Text.", str(tmp_path / "a.mp3"))
+    assert sent[0]["voice"] == speak.DEFAULT_VOICE
+    assert "instructions" not in sent[0]           # prázdný pokyn se neposílá
+
+
+def test_local_tts_still_gets_language_and_no_instructions(tmp_path):
+    from podcast import speak
+    from podcast.config import Config
+
+    sent = []
+
+    class FakeOpx:
+        def speak(self, model, text, provider="", **extra):
+            sent.append(extra)
+            return b"RIFF"
+
+    cfg = Config({"models": {"tts": "tts-cs", "tts_provider": ""},
+                  "episode": {"voice": "jirka.wav", "language": "cs"},
+                  "tts": {"mode": "direct", "instructions": "tohle lokální služba nechce"}})
+    speak.synthesize(FakeOpx(), cfg, "Text.", str(tmp_path / "a.wav"))
+    assert sent[0] == {"voice": "jirka.wav", "language": "cs"}

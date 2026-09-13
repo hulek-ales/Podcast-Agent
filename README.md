@@ -330,6 +330,29 @@ Co se mění nejčastěji:
 - **veřejná adresa agenta** — z ní se skládají odkazy na zvuk ve feedu. Bez ní si
   telefon mimo domov díl nestáhne.
 
+## Hlas přes OpenAI (nejrychlejší cesta ke zvuku)
+
+Než bude lokální TTS, umí agent namluvit díl komerčním API — GPU nepotřebuje,
+takže se s Ollamou nepere o kartu a fronta se neřeší.
+
+1. **V proxy** doplň agentovu klíči do povolených modelů `gpt-4o-mini-tts`
+   (GUI → API klíče → upravit).
+2. **V administraci agenta** → Nastavení → Chování agenta:
+   - *Hlas (model)* = `gpt-4o-mini-tts`
+   - *Poskytovatel hlasu* = `openai`
+   - *Pokyn k přednesu* — věta, kterou se modelu řekne, jak číst (a že česky).
+     Výchozí je zpravodajský tón; klidně si ho uprav.
+3. **U pořadu** nastav *Hlas* na některý z hlasů OpenAI (`alloy`, `nova`, `onyx`,
+   `shimmer`, …). Prázdné = použije se `alloy`.
+
+Komerční API má strop 4096 znaků na dotaz, takže agent text rozdělí po větách,
+namluví po kusech a slepí je do jednoho souboru. Devítiminutový díl je zhruba
+osm až deset kusů.
+
+Pozor na pole `language`: lokální GPU služba ho chce, OpenAI ho nezná a na
+neznámé pole vrátí HTTP 400. Agent proto posílá každé straně jen to, čemu rozumí
+— u komerčního API se jazyk říká větou v *Pokynu k přednesu*.
+
 ## Díly a průběh
 
 Záložka **Díly** je deník výroby: jeden řádek na každý den každého pořadu —

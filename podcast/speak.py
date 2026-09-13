@@ -8,7 +8,9 @@ Dvě cesty, obě přes proxy:
     Ollamu a model by se přehazoval.
   * **komerční API** (`models.tts_provider`, třeba OpenAI) — GPU nepotřebuje,
     takže se nečeká na kartu. Má ale strop na délku vstupu, proto se text dělí
-    tady a kusy se slepí.
+    tady a kusy se slepí. Bere jiná pole než lokální služba: `voice` je povinný,
+    `language` neexistuje (neznámé pole vrátí HTTP 400) a tón se místo toho
+    říká větou v `instructions` — tam se taky řekne, že se čte česky.
 
 Výchozí je odložená úloha: agent se odpojí, proxy syntézu vyřídí a výsledek
 uloží jako soubor. Průchozí volání (`tts.mode: direct`) drží spojení a hodí se
@@ -47,12 +49,24 @@ def split_text(text: str, limit: int) -> list:
     return chunks
 
 
-def voice_options(cfg) -> dict:
+DEFAULT_VOICE = "alloy"          # komerční API hlas vyžaduje, prázdný by skončil chybou
+
+
+def voice_options(cfg, provider: str = "") -> dict:
+    """Pole, která se posílají k textu. Každá strana rozumí něčemu jinému."""
+    keys = ("voice", "response_format", "speed") if provider else \
+           ("voice", "language", "response_format", "speed")
     out = {}
-    for key in ("voice", "language", "response_format", "speed"):
+    for key in keys:
         value = cfg.path("episode." + key)
         if value not in (None, ""):
             out[key] = value
+    if not provider:
+        return out
+    out.setdefault("voice", DEFAULT_VOICE)
+    instructions = (cfg.path("tts.instructions") or "").strip()
+    if instructions:
+        out["instructions"] = instructions
     return out
 
 
@@ -60,7 +74,7 @@ def synthesize(opx, cfg, text: str, dest: str) -> str:
     """Napíše zvuk do `dest`. Vrátí cestu k souboru."""
     model = cfg.need("models.tts")
     provider = (cfg.path("models.tts_provider") or "").strip()
-    extra = voice_options(cfg)
+    extra = voice_options(cfg, provider)
     os.makedirs(os.path.dirname(dest) or ".", exist_ok=True)
 
     if provider:

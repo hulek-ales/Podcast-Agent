@@ -26,7 +26,9 @@ DEFAULTS = {
     "episode": {"style": "anchor", "minutes": 9, "stories": 7, "max_age_hours": 24,
                 "similarity": 0.80, "fulltext": True, "temperature": "",
                 "voice": "", "language": "cs", "response_format": "mp3", "speed": 1.0},
-    "tts": {"mode": "job", "priority": 3, "poll_s": 15, "timeout_s": 7200, "max_chars": 3800},
+    "tts": {"mode": "job", "priority": 3, "poll_s": 15, "timeout_s": 7200, "max_chars": 3800,
+            "instructions": "Čti plynulou spisovnou češtinou, klidným tónem zpravodajského "
+                            "moderátora. Věty odděluj krátkou pauzou, jména vyslovuj zřetelně."},
     "jobs": {"priority": 7, "poll_s": 10, "timeout_s": 5400},
     "output": {"dir": "/data/public", "work_dir": "/data/work",
                "base_url": "", "keep_episodes": 30},
@@ -54,6 +56,9 @@ GROUPS = [
         ("tts.max_chars", "Strop na jeden dotaz (znaků)",
          "jen komerční API (OpenAI bere 4096); text se rozdělí a slepí", ()),
         ("episode.speed", "Rychlost řeči", "1.0 = normálně", ()),
+        ("tts.instructions", "Pokyn k přednesu (jen komerční API)",
+         "posílá se jako instructions; u OpenAI tím se říká i to, že se čte česky. "
+         "Lokální služba to nedostane", ()),
     ]),
     ("Fronta úloh (shrnutí)", [
         ("jobs.priority", "Priorita", "", ()),
