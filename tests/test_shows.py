@@ -230,3 +230,28 @@ def test_run_mode_decides_whether_audio_is_made(drafted, monkeypatch):
 
     client.post("/shows/prehled-dne/speak", data={"csrf": token, "stamp": "2026-09-11"})
     assert calls[-1] == ("prehled-dne", ("speak",), True)       # naváže na hotový text
+
+
+def test_temperature_can_be_cleared_in_the_form(drafted, monkeypatch):
+    """Přenesená temperature musí jít z pořadu smazat — jinak ji nikdo neodstraní."""
+    import importlib
+    from fastapi.testclient import TestClient
+    from podcast import admin as module, auth, runner
+    from podcast.config import Config
+    auth.set_password("dlouhe-heslo-na-test")
+    importlib.reload(module)
+    client = TestClient(module.app)
+    client.post("/login", data={"password": "dlouhe-heslo-na-test", "next": "/"})
+    token = auth.csrf(client.cookies.get(auth.COOKIE))
+
+    shows.upsert(make(temperature=0.6))
+    assert runner.show_config(Config({}), shows.get("prehled-dne")).path("episode.temperature") == 0.6
+    assert "0.6" in client.get("/?edit=prehled-dne").text          # ve formuláři je vidět
+
+    form = {"csrf": token, "original": "prehled-dne", "slug": "prehled-dne", "title": "Přehled dne",
+            "feeds": "https://x.cz/rss", "style": "anchor", "time": "03:10", "days": ["0"],
+            "minutes": "9", "stories": "7", "max_age_hours": "24", "keep_episodes": "30",
+            "temperature": "", "enabled": "1"}
+    client.post("/shows/save", data=form)
+    assert shows.get("prehled-dne")["temperature"] == ""
+    assert runner.show_config(Config({}), shows.get("prehled-dne")).path("episode.temperature") == ""

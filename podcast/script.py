@@ -163,8 +163,8 @@ def hint(exc: OpxError, extra: dict) -> str:
     """Rada k typickým odmítnutím, ať se nemusí luštit z odpovědi API."""
     body = str(getattr(exc, "body", "") or exc).lower()
     if "temperature" in body and extra.get("temperature") is not None:
-        return ("\n\nTenhle model bere jen výchozí temperature. Smaž `episode.temperature`"
-                " z konfigurace (nebo ji nech prázdnou) a spusť znovu s --resume.")
+        return ("\n\nTenhle model bere jen výchozí temperature. Vymaž pole „Teplota scénáře“"
+                " u pořadu (administrace → Pořady → upravit) a dej „napsat text“ znovu.")
     if "max_tokens" in body:
         return "\n\nModel chce `max_completion_tokens` místo `max_tokens`."
     if exc.status == 404:

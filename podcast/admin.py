@@ -481,6 +481,9 @@ Když ho přegeneruješ, všechny pořady musíš ve čtečce přidat znovu.</di
 <div class="row">
   <div class="field"><label for="voice">Hlas (soubor v TTS službě)</label>
     <input id="voice" name="voice" value="{f_voice}" placeholder="jirka.wav"></div>
+  <div class="field"><label for="temperature">Teplota scénáře</label>
+    <input id="temperature" name="temperature" value="{f_temperature}" placeholder="neposílat">
+    <div class="help">Prázdné = neposílat. Modely řady gpt-5 jinou než výchozí odmítnou.</div></div>
   <div class="field"><label for="keep_episodes">Nechat dílů (0 = nemazat)</label>
     <input id="keep_episodes" name="keep_episodes" type="number" min="0" value="{f_keep}"></div>
   <div class="field"><label style="margin-top:18px"><input type="checkbox" name="enabled" value="1" {f_enabled}> vyrábět podle rozvrhu</label></div>
@@ -567,6 +570,7 @@ def shows_page(cfg, session: str, msg="", err="", edit: str = "") -> str:
         f_minutes=form["minutes"], f_stories=form["stories"], f_age=form["max_age_hours"],
         f_time=escape(str(form["time"])), f_voice=escape(form.get("voice", "")),
         f_keep=form.get("keep_episodes", 30),
+        f_temperature=escape(str(form.get("temperature", "") or "")),
         f_enabled="checked" if (form.get("enabled", True)) else "",
         styles="".join('<option value="' + st + '"' + (" selected" if form["style"] == st else "")
                        + ">" + label + "</option>"
@@ -606,6 +610,7 @@ async def shows_save(request: Request):
         "time": (form.get("time") or "03:10").strip(),
         "days": [int(d) for d in form.getlist("days") if str(d).isdigit()],
         "voice": (form.get("voice") or "").strip(),
+        "temperature": (form.get("temperature") or "").strip(),
         "keep_episodes": _int(form.get("keep_episodes"), 30),
         "enabled": bool(form.get("enabled")),
     }
