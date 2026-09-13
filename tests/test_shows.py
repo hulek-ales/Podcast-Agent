@@ -255,3 +255,22 @@ def test_temperature_can_be_cleared_in_the_form(drafted, monkeypatch):
     client.post("/shows/save", data=form)
     assert shows.get("prehled-dne")["temperature"] == ""
     assert runner.show_config(Config({}), shows.get("prehled-dne")).path("episode.temperature") == ""
+
+
+def test_page_refreshes_itself_while_a_run_is_in_progress(drafted, monkeypatch):
+    """Text se píše na pozadí — stránka to musí říct a sama se načíst, jinak
+    uživatel kouká na kartu bez odkazu a neví, na co čeká."""
+    import importlib
+    from fastapi.testclient import TestClient
+    from podcast import admin as module, auth, runner
+    auth.set_password("dlouhe-heslo-na-test")
+    importlib.reload(module)
+    client = TestClient(module.app)
+    client.post("/login", data={"password": "dlouhe-heslo-na-test", "next": "/"})
+
+    assert "http-equiv=\"refresh\"" not in client.get("/").text      # klid = žádné načítání
+
+    monkeypatch.setattr(runner, "status", lambda: {"running": "prehled-dne", "last": {}})
+    page = client.get("/").text
+    assert "http-equiv=\"refresh\"" in page
+    assert "právě se vyrábí" in page

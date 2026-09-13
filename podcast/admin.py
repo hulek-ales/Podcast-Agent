@@ -428,7 +428,7 @@ def feed_rotate(request: Request, csrf: str = Form("")):
 # ------------------------------------------------------------- pořady
 
 SHOWS_PAGE = """<!doctype html><html lang="cs"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1">{refresh}
 <title>Pořady · Podcast agent</title><style>{css}</style></head><body>
 <header><span>Podcast agent</span>
 <nav><a href="/" class="on">Pořady</a> <a href="/nastaveni">Nastavení</a></nav>
@@ -493,7 +493,7 @@ Když ho přegeneruješ, všechny pořady musíš ve čtečce přidat znovu.</di
 </main></body></html>"""
 
 
-def show_cards(cfg, token: str) -> str:
+def show_cards(cfg, token: str, running: str = "") -> str:
     rows = shows.load()
     if not rows:
         return ('<div class="panel mute">Zatím žádný pořad. Založ ho níž — deset ověřených '
@@ -508,6 +508,9 @@ def show_cards(cfg, token: str) -> str:
         if result:
             note = ('<div class="help ' + ("" if result["ok"] else "bad") + '">poslední běh: '
                     + escape(result["message"]) + "</div>")
+        if running == slug:
+            note = ('<div class="help">právě se vyrábí — stránka se sama načítá, '
+                    "odkaz na text se objeví tady</div>") + note
         episodes = feedmod.load_episodes(runner.episode_dir(cfg, slug))
         found = runner.draft(cfg, slug)
         draft_stamp = found[0] if found else ""
@@ -553,7 +556,8 @@ def shows_page(cfg, session: str, msg="", err="", edit: str = "") -> str:
     form = {**shows.DEFAULTS, **(show or {})}
     running = runner.status()["running"]
     return SHOWS_PAGE.format(
-        css=CSS, token=token, cards=show_cards(cfg, token),
+        css=CSS, token=token, cards=show_cards(cfg, token, running or ""),
+        refresh='\n<meta http-equiv="refresh" content="15">' if running else "",
         msg=('<div class="flash good">' + escape(msg) + "</div>") if msg else "",
         err=('<div class="flash bad">' + escape(err) + "</div>") if err else "",
         running=('<div class="flash">Právě se vyrábí <b>' + escape(running) + "</b> — další běh"
