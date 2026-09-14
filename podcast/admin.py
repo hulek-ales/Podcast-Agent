@@ -556,8 +556,11 @@ Když ho přegeneruješ, všechny pořady musíš ve čtečce přidat znovu.</di
   <div class="field"><label>Dny</label><div style="display:flex;gap:10px;flex-wrap:wrap;padding-top:4px">{days}</div></div>
 </div>
 <div class="row">
-  <div class="field"><label for="voice">Hlas (soubor v TTS službě)</label>
-    <input id="voice" name="voice" value="{f_voice}" placeholder="jirka.wav"></div>
+  <div class="field"><label for="voice">Hlas</label>
+    <input id="voice" name="voice" value="{f_voice}" placeholder="nova">
+    <div class="help">Podle toho, kdo mluví: u OpenAI jméno hlasu (alloy, echo, fable, onyx,
+      nova, shimmer, coral, verse, ballad, ash, sage, marin, cedar), u lokální GPU služby
+      soubor s referenční nahrávkou (jirka.wav).</div></div>
   <div class="field"><label for="temperature">Teplota scénáře</label>
     <input id="temperature" name="temperature" value="{f_temperature}" placeholder="neposílat">
     <div class="help">Prázdné = neposílat. Modely řady gpt-5 jinou než výchozí odmítnou.</div></div>
