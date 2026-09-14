@@ -449,8 +449,11 @@ search:
 Pak v administraci agenta Nastavení → *Adresa vyhledávače* = `http://searxng:8080`
 a *Výsledků na dotaz* třeba 3. Port ven vystavovat nemusíš, volá ho jen agent.
 
-Ověření: `curl 'http://searxng:8080/search?q=test&format=json' | head -c 200`.
-Když přijde HTML, JSON v `settings.yml` chybí.
+Ověření: v administraci Nastavení → **Zkouška vyhledávače** → *Otestovat*.
+Buď vypíše nalezené odkazy, nebo řekne, co je špatně. Z příkazové řádky totéž:
+`curl 'http://searxng:8080/search?q=test&format=json' | head -c 200` — když přijde
+HTML, chybí `json` v `search.formats`; když 429, odmítl to limiter
+(`server.limiter: false` pro instanci, na kterou se zvenku nikdo nedostane).
 
 Dál běží stejná roura: lokální model udělá z každého podkladu hutný výtah (přes
 frontu úloh), komerční model z výtahů napíše díl rozvržený do kapitol, a pak hlas

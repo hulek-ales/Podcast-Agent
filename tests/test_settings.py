@@ -134,3 +134,23 @@ def test_failed_sample_says_why(client, monkeypatch):
     r = client.post("/hlas/ukazka", data={"csrf": csrf(client), "voice": "xxx"},
                     follow_redirects=False)
     assert "err=" in r.headers["location"] and "ukazka=" not in r.headers["location"]
+
+
+def test_search_test_button_says_what_is_wrong(client, monkeypatch):
+    """SearXNG má dvě tichá místa (vypnutý JSON, limiter) a zvenku vypadají stejně."""
+    from podcast import settings, topic as topicmod
+
+    page = client.get("/nastaveni").text
+    assert "Adresa vyhledávače není vyplněná" in page      # bez adresy jen vysvětlení
+
+    settings.save({**settings.overrides(), "search.url": "http://searxng:8080"})
+    assert "Otestovat vyhledávač" in client.get("/nastaveni").text
+
+    monkeypatch.setattr(topicmod, "web_search", lambda *a, **kw: [])
+    r = client.post("/hledani/test", data={"csrf": csrf(client)}, follow_redirects=False)
+    assert "err=" in r.headers["location"] and "search.formats" in r.headers["location"]
+
+    monkeypatch.setattr(topicmod, "web_search",
+                        lambda *a, **kw: [{"title": "T", "link": "https://a.cz/x"}])
+    r = client.post("/hledani/test", data={"csrf": csrf(client)}, follow_redirects=False)
+    assert "msg=" in r.headers["location"] and "a.cz" in r.headers["location"]

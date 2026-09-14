@@ -26,7 +26,7 @@ from fastapi.responses import (FileResponse, HTMLResponse, JSONResponse,
 from datetime import datetime
 
 from . import (auth, config, feed as feedmod, keys, runner, script, settings as prefs,
-               shows, speak, state, version)
+               shows, speak, state, topic as topicmod, version)
 from .opx import OpxClient, OpxError
 
 app = FastAPI(title="Podcast agent", docs_url=None, redoc_url=None, openapi_url=None)
@@ -303,6 +303,9 @@ použije se jednou a zapomene.</p>
 <h2>Zkouška hlasu</h2>
 {sample}
 
+<h2>Zkouška vyhledávače</h2>
+{search}
+
 <h2>Heslo do administrace</h2>
 <div class="panel"><form method="post" action="/settings/password">
 <input type="hidden" name="csrf" value="{token}">
@@ -328,6 +331,7 @@ použije se jednou a zapomene.</p>
                 if auth.initial_password() else "",
         saved_url=escape(state.load().get("proxy_url", "")), min_pw=auth.MIN_PASSWORD,
         prefs=settings_form(token), sample=sample_panel(cfg, token, played),
+        search=search_panel(cfg, token),
         url=escape(url or "—"), url_src=escape(url_src), key_src=escape(key_src),
         masked=escape(keys.mask(key)) if key else "—",
         wanted=escape(", ".join(m for m in wanted if m)))
@@ -1393,3 +1397,43 @@ def static_file(name: str):
     return FileResponse(path, media_type=STATIC_TYPES.get(os.path.splitext(path)[1].lower(),
                                                           "application/octet-stream"),
                         headers={"Cache-Control": "public, max-age=86400"})
+
+
+# --------------------------------------------------- zkouška vyhledávače
+
+SEARCH_PROBE = "vyhynutí dinosaurů"
+
+
+def search_panel(cfg, token: str, result: str = "") -> str:
+    """Řekne rovnou, jestli vyhledávač odpovídá a mluví JSONem.
+
+    Nastavení SearXNG má dvě tichá místa, kde se to zadrhne: JSON je ve výchozím
+    `settings.yml` vypnutý a limiter umí vlastní dotazy odmítat. Obojí vypadá
+    zvenku stejně — „nic se nenašlo“ — tak ať to řekne jedno tlačítko."""
+    url = (cfg.path("search.url") or "").strip()
+    if not url:
+        return ('<div class="panel mute">Adresa vyhledávače není vyplněná, takže podklady '
+                'k tématu jsou jen z Wikipedie a z odkazů, které zadáš u pořadu. '
+                'Jak spustit SearXNG, je v README.</div>')
+    return ('<div class="panel"><form method="post" action="/hledani/test">'
+            '<input type="hidden" name="csrf" value="' + token + '">'
+            '<p class="help" style="margin-top:0">Zkusí se dotaz „' + escape(SEARCH_PROBE)
+            + '“ na <code>' + escape(url) + "</code>.</p>"
+            '<button>Otestovat vyhledávač</button></form>' + result + "</div>")
+
+
+@app.post("/hledani/test")
+def search_test(request: Request, csrf: str = Form("")):
+    check_csrf(csrf, require(request))
+    cfg = config.load()
+    url = (cfg.path("search.url") or "").strip()
+    if not url:
+        return back(err="Nejdřív vyplň adresu vyhledávače.", where="/nastaveni")
+    hits = topicmod.web_search(url, SEARCH_PROBE, int(cfg.path("search.results", 3)))
+    if not hits:
+        return back(err="Vyhledávač nic nevrátil. Nejčastěji chybí `json` v `search.formats` "
+                        "v settings.yml (pak posílá HTML), nebo dotaz odmítl limiter — "
+                        "zkus `server.limiter: false`. Podrobnost je v logu aplikace.",
+                    where="/nastaveni")
+    return back(msg="Vyhledávač odpovídá, " + str(len(hits)) + " výsledků: "
+                + ", ".join(h["link"] for h in hits[:3]), where="/nastaveni")
