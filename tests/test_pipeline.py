@@ -279,3 +279,81 @@ def test_local_tts_still_gets_language_and_no_instructions(tmp_path):
                   "tts": {"mode": "direct", "instructions": "tohle lokální služba nechce"}})
     speak.synthesize(FakeOpx(), cfg, "Text.", str(tmp_path / "a.wav"))
     assert sent[0] == {"voice": "jirka.wav", "language": "cs"}
+
+
+class CatalogOpx:
+    """Fake proxy, která umí říct, co zná — kvůli kontrole hlasu před syntézou."""
+
+    def __init__(self, catalog):
+        self.catalog = catalog
+        self.spoke = 0
+
+    def models(self):
+        return self.catalog
+
+    def speak(self, model, text, provider="", **extra):
+        self.spoke += 1
+        return b"MP3"
+
+
+def test_unknown_local_voice_says_what_to_fix(tmp_path):
+    """Špatně nastavený hlas poslala proxy do Ollamy a vrátilo se holé 404.
+    Tohle se má poznat dřív, než se odešle devět minut textu."""
+    import pytest
+
+    from podcast import speak
+    from podcast.config import Config
+
+    opx = CatalogOpx({"ollama": {"ok": True, "models": ["gemma4:12b"]},
+                      "openai": {"ok": True, "kind": "openai",
+                                 "models": ["gpt-5-mini", "gpt-4o-mini-tts"]}})
+    cfg = Config({"models": {"tts": "tts-cs", "tts_provider": ""},
+                  "episode": {"voice": "jirka.wav"}, "tts": {"mode": "direct"}})
+    with pytest.raises(SystemExit) as exc:
+        speak.synthesize(opx, cfg, "Text.", str(tmp_path / "a.mp3"))
+    assert "tts-cs" in str(exc.value) and "žádná GPU služba" in str(exc.value)
+    assert "gpt-4o-mini-tts" in str(exc.value)      # a rovnou poradí, co nastavit
+    assert opx.spoke == 0                           # text se vůbec neodeslal
+
+
+def test_known_local_voice_passes(tmp_path):
+    from podcast import speak
+    from podcast.config import Config
+
+    opx = CatalogOpx({"ollama": {"ok": True, "models": ["gemma4:12b"]},
+                      "tts": {"ok": True, "kind": "gpu", "models": ["tts-cs"]}})
+    cfg = Config({"models": {"tts": "tts-cs", "tts_provider": ""},
+                  "episode": {"voice": "jirka.wav"}, "tts": {"mode": "direct"}})
+    speak.synthesize(opx, cfg, "Text.", str(tmp_path / "a.mp3"))
+    assert opx.spoke == 1
+
+
+def test_voice_model_missing_at_the_provider(tmp_path):
+    import pytest
+
+    from podcast import speak
+    from podcast.config import Config
+
+    opx = CatalogOpx({"openai": {"ok": True, "kind": "openai",
+                                 "models": ["gpt-5-mini", "gpt-4o-mini-tts"]}})
+    cfg = Config({"models": {"tts": "tts-1-hd-preklep", "tts_provider": "openai"},
+                  "tts": {"mode": "direct"}})
+    with pytest.raises(SystemExit) as exc:
+        speak.synthesize(opx, cfg, "Text.", str(tmp_path / "a.mp3"))
+    assert "gpt-4o-mini-tts" in str(exc.value)
+    assert opx.spoke == 0
+
+
+def test_silent_proxy_does_not_block_synthesis(tmp_path):
+    """Když se katalog nepodaří přečíst, ať to řekne až vlastní dotaz."""
+    from podcast import speak
+    from podcast.config import Config
+
+    class Broken(CatalogOpx):
+        def models(self):
+            raise OSError("proxy neodpovídá")
+
+    opx = Broken({})
+    cfg = Config({"models": {"tts": "cokoliv", "tts_provider": ""}, "tts": {"mode": "direct"}})
+    speak.synthesize(opx, cfg, "Text.", str(tmp_path / "a.mp3"))
+    assert opx.spoke == 1

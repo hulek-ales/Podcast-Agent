@@ -70,10 +70,55 @@ def voice_options(cfg, provider: str = "") -> dict:
     return out
 
 
+def check_voice(opx, model: str, provider: str):
+    """Ověří, že proxy takový hlas zná — dřív, než se pošle devět minut textu.
+
+    Bez téhle kontroly skončí špatně nastavený hlas tak, že proxy pošle dotaz
+    do Ollamy (ta syntézu řeči neumí) a vrátí se holé „HTTP 404: 404 page not
+    found“. Hledat v tom nastavení hlasu je zbytečná práce."""
+    try:
+        catalog = opx.models()
+    except Exception:
+        return                      # proxy neodpovídá; ať si to odnese vlastní dotaz
+    if not isinstance(catalog, dict) or not catalog:
+        return
+
+    def known(entry):
+        return model in (entry.get("models") or [])
+
+    if provider:
+        entry = catalog.get(provider)
+        if entry is None:
+            raise SystemExit("poskytovatel hlasu „" + provider + "“ v proxy není. "
+                             "Znám: " + ", ".join(sorted(catalog)) + ". Oprav to v administraci "
+                             "(Nastavení → Chování agenta → Poskytovatel hlasu).")
+        if entry.get("ok") and entry.get("models") and not known(entry):
+            raise SystemExit("poskytovatel „" + provider + "“ model „" + model + "“ nenabízí. "
+                             "Hlasy, které tam vidím: "
+                             + (", ".join(m for m in entry["models"] if "tts" in m.lower())
+                                or "žádný s „tts“ v názvu")
+                             + ". Oprav Hlas (model) v administraci.")
+        return
+
+    gpu = {slug: e for slug, e in catalog.items()
+           if slug != "ollama" and e.get("kind") == "gpu"}
+    if any(known(e) for e in gpu.values()):
+        return
+    nabidka = sorted({m for e in gpu.values() for m in (e.get("models") or [])})
+    raise SystemExit(
+        "hlas „" + model + "“ není v proxy u žádné lokální GPU služby"
+        + (" (znám tam: " + ", ".join(nabidka) + ")" if nabidka else
+           " a žádná GPU služba tam zatím není")
+        + ". Dotaz by šel do Ollamy, která syntézu řeči neumí, a vrátila by se chyba 404. "
+          "V administraci (Nastavení → Chování agenta) nastav Hlas (model) a Poskytovatele "
+          "hlasu — třeba gpt-4o-mini-tts a openai.")
+
+
 def synthesize(opx, cfg, text: str, dest: str) -> str:
     """Napíše zvuk do `dest`. Vrátí cestu k souboru."""
     model = cfg.need("models.tts")
     provider = (cfg.path("models.tts_provider") or "").strip()
+    check_voice(opx, model, provider)
     extra = voice_options(cfg, provider)
     os.makedirs(os.path.dirname(dest) or ".", exist_ok=True)
 
