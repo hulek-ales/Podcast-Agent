@@ -36,6 +36,7 @@ DEFAULTS = {
                             "přízvuk dávej vždy na první slabiku slova. Věty odděluj krátkou "
                             "pauzou, jména vyslovuj zřetelně."},
     "jobs": {"priority": 7, "poll_s": 10, "timeout_s": 5400},
+    "search": {"url": "", "results": 3},
     "output": {"dir": "/data/public", "work_dir": "/data/work",
                "base_url": "", "keep_episodes": 30},
     "feed": {"author": "Podcast agent", "image": ""},
@@ -70,6 +71,12 @@ GROUPS = [
         ("jobs.priority", "Priorita", "", ()),
         ("jobs.poll_s", "Jak často se ptát (s)", "", ()),
         ("jobs.timeout_s", "Nejdéle čekat (s)", "", ()),
+    ]),
+    ("Hledání podkladů (tematické pořady)", [
+        ("search.url", "Adresa vyhledávače",
+         "vlastní instance SearXNG s povoleným JSON (např. http://searxng:8080). "
+         "Prázdné = podklady jen z Wikipedie a z odkazů, které zadáš u pořadu", ()),
+        ("search.results", "Výsledků na dotaz", "kolik odkazů z webu zkusit stáhnout", ()),
     ]),
     ("Výstup a feed", [
         ("output.base_url", "Veřejná adresa agenta",

@@ -114,3 +114,114 @@ def test_summarize_asks_for_a_fuller_digest_on_topics():
     assert "3 až 5 vět" in news and "10 až 15 vět" in deep
     assert len(deep) > len(news) * 2                    # encyklopedie unese víc než zpráva
     assert summarize.job_body("m", cluster, topic="X")["options"]["num_ctx"] == 16384
+
+
+class PlanOpx:
+    """Model, který z tématu udělá dotazy do vyhledávače."""
+
+    def __init__(self, content):
+        self.content = content
+        self.asked = []
+
+    def provider_chat(self, provider, model, messages, **extra):
+        self.asked.append(messages[1]["content"])
+        return {"choices": [{"message": {"content": self.content}}]}
+
+
+def cfg_with(**over):
+    from podcast.config import Config
+    return Config({"models": {"script": "m", "script_provider": "p"}, **over})
+
+
+def test_topic_becomes_search_queries():
+    """Doslovná otázka je pro vyhledávání mizerný vstup; pojmy z ní dobrý."""
+    from podcast import topic as topicmod
+
+    opx = PlanOpx('{"wiki": ["Kvantový počítač", "Kvantové hradlo"], '
+                  '"web": ["jak funguje kvantový počítač", "kubit vysvětlení"]}')
+    plan = topicmod.queries(opx, cfg_with(), "Jak funguje kvantový počítač")
+    assert plan["wiki"] == ["Kvantový počítač", "Kvantové hradlo"]
+    assert len(plan["web"]) == 2
+    assert "Jak funguje kvantový počítač" in opx.asked[0]
+
+
+def test_broken_plan_falls_back_to_the_topic_itself():
+    from podcast import topic as topicmod
+
+    assert topicmod.queries(PlanOpx("tohle není JSON"), cfg_with(), "Dinosauři") == {
+        "wiki": ["Dinosauři"], "web": ["Dinosauři"]}
+    assert topicmod.queries(None, cfg_with(), "Dinosauři")["wiki"] == ["Dinosauři"]
+
+
+def test_web_search_is_skipped_without_an_engine(monkeypatch):
+    """Bez vlastní instance se web neprohledává — cizí vyhledávač se nescrapuje."""
+    from podcast import topic as topicmod
+
+    monkeypatch.setattr(topicmod, "_api", lambda lang, params, **kw: (
+        {"query": {"search": [{"title": "Dinosauři"}]}} if params.get("list") == "search"
+        else {"query": {"pages": [{"title": "Dinosauři", "extract": "Fakta. " * 400}]}}))
+    called = []
+    monkeypatch.setattr(topicmod, "web_search",
+                        lambda *a, **kw: called.append(a) or [])
+
+    arts = topicmod.gather("Dinosauři", langs=("cs",))
+    assert called == [] and len(arts) == 1
+
+
+def test_web_hits_are_fetched_and_joined(monkeypatch):
+    from podcast import collect, topic as topicmod
+
+    monkeypatch.setattr(topicmod, "_api", lambda lang, params, **kw: (
+        {"query": {"search": [{"title": "Dinosauři"}]}} if params.get("list") == "search"
+        else {"query": {"pages": [{"title": "Dinosauři", "extract": "Fakta. " * 400}]}}))
+    monkeypatch.setattr(topicmod, "web_search", lambda base, query, limit, **kw: [
+        {"title": "Studie o impaktu", "link": "https://priroda.cz/impakt"}])
+
+    def fake_fulltext(articles, max_chars=4000):
+        for art in articles:
+            art["text"] = "Text ze studie. " * 50
+        return articles
+
+    monkeypatch.setattr(collect, "fetch_fulltext", fake_fulltext)
+
+    arts = topicmod.gather("Dinosauři", langs=("cs",), search_url="http://searxng:8080")
+    sources = {a["source"] for a in arts}
+    assert sources == {"Wikipedie", "priroda.cz"}
+    assert all(a["text"] for a in arts)
+
+
+def test_search_results_skip_pdfs_and_junk(monkeypatch):
+    from podcast import topic as topicmod
+
+    payload = {"results": [{"url": "https://a.cz/studie.pdf", "title": "PDF"},
+                           {"url": "neplatne", "title": "nic"},
+                           {"url": "https://b.cz/clanek", "title": "Článek"},
+                           {"url": "https://c.cz/dalsi", "title": "Další"}]}
+    monkeypatch.setattr(topicmod.urllib.request, "urlopen",
+                        lambda *a, **kw: _Resp(json.dumps(payload).encode()))
+    hits = topicmod.web_search("http://searxng:8080", "dinosauři", limit=2)
+    assert [h["link"] for h in hits] == ["https://b.cz/clanek", "https://c.cz/dalsi"]
+
+
+class _Resp:
+    def __init__(self, raw):
+        self.raw = raw
+
+    def read(self):
+        return self.raw
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+def test_unreachable_engine_does_not_kill_the_run(monkeypatch):
+    from podcast import topic as topicmod
+
+    def boom(*a, **kw):
+        raise OSError("connection refused")
+
+    monkeypatch.setattr(topicmod.urllib.request, "urlopen", boom)
+    assert topicmod.web_search("http://searxng:8080", "cokoliv") == []

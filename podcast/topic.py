@@ -5,13 +5,20 @@ se z hlavy modelu, jenže díl o vyhynutí dinosaurů poskládaný z paměti zn�
 sebejistě, ať jsou fakta správně, nebo ne — a ověřit to nejde. Proto stejné
 pravidlo jako u zpráv: **napřed sežeň text, pak z něj piš**.
 
-Zdroje jsou dva a oba jdou na věc:
+Zdroje si agent hledá sám, ve třech krocích:
 
-  * **Wikipedie** — vyhledá se téma (česky, a když je článek krátký, i anglicky)
-    a stáhne se holý text nalezených hesel. Bez klíče, bez limitu, s odkazem,
-    který jde v dílu přiznat.
-  * **vlastní odkazy** — cokoli přidáš u pořadu; text z nich dotáhne trafilatura
-    stejně jako u zpráv.
+  1. **rozmyslet, na co se ptát** — z tématu („Jak funguje kvantový počítač“)
+     udělá model pár konkrétních dotazů a názvů hesel. Doslovná otázka je pro
+     vyhledávání mizerný vstup; pojmy z ní jsou dobrý.
+  2. **Wikipedie** — na každý dotaz se vyhledá heslo a stáhne jeho holý text.
+     Bez klíče, bez limitu, s odkazem, který jde v dílu přiznat.
+  3. **web** — jen když je v nastavení adresa vyhledávače (SearXNG, viz README).
+     Bez ní se tenhle krok tiše přeskočí: prohledat web se nedá „jen tak“, chce
+     to buď placené API, nebo vlastní instanci, a agent nemá co scrapovat cizí
+     výsledky.
+
+K tomu **vlastní odkazy** — cokoli přidáš u pořadu; text z nich dotáhne
+trafilatura stejně jako u zpráv.
 
 Na výstupu je seznam „článků“ ve stejném tvaru, jaký používá zpravodajská větev,
 takže zbytek roury (shrnutí přes frontu úloh → scénář → hlas → feed) je společný.
@@ -88,10 +95,79 @@ def extract(titles: list, lang: str = "cs", max_chars: int = 20000) -> list:
     return out
 
 
-def gather(topic: str, urls: list = None, langs=("cs", "en"), per_lang: int = 3) -> list:
-    """Podklady k tématu: vlastní odkazy + hesla z Wikipedie. Duplicity pryč."""
+QUERY_SYSTEM = (
+    "Z tématu podcastového dílu uděláš dotazy do vyhledávače. Vracíš jen JSON."
+)
+QUERY_USER = """Téma dílu: {topic}
+
+Navrhni, co hledat, aby se k tématu našly použitelné podklady:
+- "wiki": 2 až 4 názvy hesel na Wikipedii (přesné pojmy, ne otázky), česky;
+  když je téma spíš zahraniční, přidej i anglický název hesla
+- "web": 2 až 4 vyhledávací dotazy pro běžný vyhledávač
+
+Vrať POUZE JSON: {{"wiki": ["…"], "web": ["…"]}}"""
+
+
+def queries(opx, cfg, topic: str) -> dict:
+    """Z tématu udělá dotazy. Když se to nepovede, hledá se doslova zadané téma."""
+    fallback = {"wiki": [topic], "web": [topic]}
+    provider = cfg.path("models.script_provider")
+    model = cfg.path("models.script")
+    if not (opx and provider and model):
+        return fallback
+    try:
+        answer = opx.provider_chat(provider, model, [
+            {"role": "system", "content": QUERY_SYSTEM},
+            {"role": "user", "content": QUERY_USER.format(topic=topic)}])
+        content = (answer.get("choices") or [{}])[0].get("message", {}).get("content", "")
+        from .script import parse_json
+        data = parse_json(content)
+    except Exception as exc:
+        print("[téma] dotazy se nepodařilo vymyslet (" + str(exc)[:120] + "), hledám doslova",
+              flush=True)
+        return fallback
+    out = {}
+    for key in ("wiki", "web"):
+        values = [str(q).strip() for q in (data.get(key) or []) if str(q).strip()]
+        out[key] = values[:4] or [topic]
+    print("[téma] hledám — hesla: " + ", ".join(out["wiki"]) + " · web: "
+          + ", ".join(out["web"]), flush=True)
+    return out
+
+
+def web_search(base_url: str, query: str, limit: int = 4, lang: str = "cs",
+               timeout: float = 20.0) -> list:
+    """Výsledky z vlastní instance SearXNG ({base}/search?format=json).
+
+    Schválně jen vlastní instance: cizí vyhledávač se scrapovat nemá a placené
+    API by znamenalo další klíč. Kdo chce širší záběr, spustí si SearXNG vedle
+    agenta (je to jeden kontejner) a vyplní adresu v nastavení."""
+    url = base_url.rstrip("/") + "/search?" + urllib.parse.urlencode(
+        {"q": query, "format": "json", "language": lang, "safesearch": 0})
+    req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode("utf-8", "replace"))
+    except Exception as exc:
+        print("[téma] vyhledávač neodpověděl (" + str(exc)[:120] + ")", flush=True)
+        return []
+    out = []
+    for row in (data.get("results") or [])[:limit * 3]:
+        link = (row.get("url") or "").strip()
+        if not link.startswith("http") or link.lower().endswith(".pdf"):
+            continue                     # z PDF trafilatura text nevytáhne
+        out.append({"title": (row.get("title") or link).strip(), "link": link})
+        if len(out) >= limit:
+            break
+    return out
+
+
+def gather(topic: str, urls: list = None, langs=("cs", "en"), per_lang: int = 3,
+           opx=None, cfg=None, search_url: str = "", per_query: int = 3) -> list:
+    """Podklady k tématu: vlastní odkazy + Wikipedie + volitelně web. Duplicity pryč."""
     from .collect import fetch_fulltext
 
+    plan = queries(opx, cfg, topic) if opx is not None else {"wiki": [topic], "web": [topic]}
     articles = []
     for url in urls or []:
         url = (url or "").strip()
@@ -107,11 +183,29 @@ def gather(topic: str, urls: list = None, langs=("cs", "en"), per_lang: int = 3)
                 art["title"] = first
 
     for lang in langs:
-        found = extract(search(topic, lang, per_lang), lang)
-        articles.extend(found)
+        titles = []
+        for query in plan["wiki"]:
+            for title in search(query, lang, per_lang):
+                if title not in titles:
+                    titles.append(title)
+        articles.extend(extract(titles[:per_lang + 2], lang))
         total = sum(len(a.get("text") or "") for a in articles)
         if lang == langs[0] and total >= 12000:
             break                                  # česká hesla stačila, anglicky netřeba
+
+    if search_url:
+        hits, seen_links = [], {a["link"] for a in articles}
+        for query in plan["web"]:
+            for hit in web_search(search_url, query, per_query):
+                if hit["link"] not in seen_links:
+                    seen_links.add(hit["link"])
+                    hits.append(hit)
+        found = [{"id": article_id(h["link"]), "title": h["title"], "link": h["link"],
+                  "source": urllib.parse.urlparse(h["link"]).netloc, "summary": "",
+                  "text": None, "published": None, "weight": 1.0} for h in hits[:8]]
+        if found:
+            fetch_fulltext(found, max_chars=20000)
+            articles.extend(a for a in found if (a.get("text") or "").strip())
 
     seen, unique = set(), []
     for art in articles:

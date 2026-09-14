@@ -400,11 +400,57 @@ RSS zadej téma — „Vyhynutí dinosaurů", „Jak funguje kvantový počíta�
 Podklady se **nevymýšlejí z hlavy modelu**. Platí tu stejné pravidlo jako
 u zpráv: napřed sežeň text, pak z něj piš. Díl o dinosaurech poskládaný z paměti
 modelu zní stejně sebejistě, ať jsou fakta správně, nebo ne, a ověřit to nejde.
-Zdroje jsou proto dva:
+Zdroje si agent hledá sám, ve třech krocích:
 
-- **Wikipedie** — téma se vyhledá česky (a když je český článek hubený, i anglicky)
-  a stáhne se holý text hesel. Bez klíče, s odkazem, který se dá v dílu přiznat.
-- **vlastní odkazy** — cokoli přidáš u pořadu; text z nich dotáhne trafilatura.
+1. **rozmyslí si, na co se ptát.** Z tématu („Jak funguje kvantový počítač“)
+   nechá model udělat pár konkrétních dotazů a názvů hesel. Doslovná otázka je
+   pro vyhledávání mizerný vstup, pojmy z ní dobrý — na téhle jedné větě záleží
+   víc než na čemkoli dalším v tomhle kroku.
+2. **Wikipedie.** Na každý dotaz se vyhledá heslo a stáhne jeho holý text. Bez
+   klíče, s odkazem, který se dá v dílu přiznat.
+3. **web** — jen když je v nastavení adresa vyhledávače (viz níž). Bez ní se
+   krok tiše přeskočí.
+
+K tomu **vlastní odkazy** — cokoli přidáš u pořadu; text z nich dotáhne trafilatura.
+
+### Prohledávání webu (nepovinné)
+
+Prohledat web se nedá „jen tak“: buď se platí API, nebo se scrapují cizí
+výsledky (křehké a proti podmínkám), nebo si člověk vyhledávač postaví. Agent
+umí to třetí — mluví s **[SearXNG](https://github.com/searxng/searxng)**, což je
+metavyhledávač na jeden kontejner. Sám se ptá desítek vyhledávačů, nic
+nesleduje a nepotřebuje klíč.
+
+```yaml
+services:
+  searxng:
+    image: searxng/searxng:latest
+    container_name: searxng
+    restart: unless-stopped
+    environment:
+      SEARXNG_BASE_URL: http://searxng:8080/
+    volumes:
+      - /mnt/tank/apps/searxng:/etc/searxng
+    networks: [ollamaNet]
+networks:
+  ollamaNet: {name: ollamaNet, external: true}
+```
+
+Po prvním startu se do svazku vygeneruje `settings.yml`. **Doplň v něm JSON**,
+jinak agent dostane HTML a nic z toho nepřečte:
+
+```yaml
+search:
+  formats:
+    - html
+    - json
+```
+
+Pak v administraci agenta Nastavení → *Adresa vyhledávače* = `http://searxng:8080`
+a *Výsledků na dotaz* třeba 3. Port ven vystavovat nemusíš, volá ho jen agent.
+
+Ověření: `curl 'http://searxng:8080/search?q=test&format=json' | head -c 200`.
+Když přijde HTML, JSON v `settings.yml` chybí.
 
 Dál běží stejná roura: lokální model udělá z každého podkladu hutný výtah (přes
 frontu úloh), komerční model z výtahů napíše díl rozvržený do kapitol, a pak hlas

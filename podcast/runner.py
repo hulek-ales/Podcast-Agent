@@ -112,9 +112,12 @@ def _produce(show: dict, day: datetime, steps, resume: bool) -> dict:
     articles = work.load("collect")
     if articles is None:
         if subject:
-            trace.step("podklady", "téma „" + subject + "“ + "
-                       + str(len(show.get("links") or [])) + " vlastních odkazů")
-            articles = topicmod.gather(subject, show.get("links"))
+            trace.step("podklady", "téma „" + subject + "“, "
+                       + str(len(show.get("links") or [])) + " vlastních odkazů, web "
+                       + ("zapnutý" if (cfg.path("search.url") or "").strip() else "vypnutý"))
+            articles = topicmod.gather(subject, show.get("links"), opx=opx, cfg=cfg,
+                                       search_url=(cfg.path("search.url") or "").strip(),
+                                       per_query=int(cfg.path("search.results", 3)))
             if not articles:
                 return _done(slug, False, "k tématu „" + subject + "“ se nenašly žádné podklady "
                              "— zkus téma napsat jinak, nebo přidej vlastní odkazy")
