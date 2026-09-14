@@ -375,6 +375,22 @@ Když ti ani jedno nestačí, zbývá lokální model s českými váhami
 (viz [podcast-tts](https://github.com/hulek-ales/podcast-tts)) — tam je přízvuk
 z principu český, jen za cenu stavění image a sdílení karty s Ollamou.
 
+## Aplikace na mobilu
+
+Administrace se dá přidat na plochu telefonu a chová se pak jako appka — vlastní
+ikona, celá obrazovka, žádný adresní řádek. Není to nic k instalaci z obchodu,
+jen webová stránka s manifestem a service workerem.
+
+- **Android / Chrome:** otevři adresu agenta → menu ⋮ → *Přidat na plochu*
+  (nebo *Nainstalovat aplikaci*, když ji prohlížeč nabídne sám).
+- **iPhone / Safari:** ikona sdílení → *Přidat na plochu*.
+
+Podmínkou je HTTPS — přes `http://` prohlížeč instalaci nenabídne.
+
+Service worker schválně **nic necachuje**. Administrace ukazuje stav běhů a
+fronty a odpověď ze cache by lhala o tom, co se zrovna děje; díly si stejně
+stahuje čtečka podcastů, ne tahle stránka.
+
 ## Díly a průběh
 
 Záložka **Díly** je deník výroby: jeden řádek na každý den každého pořadu —

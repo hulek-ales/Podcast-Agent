@@ -20,7 +20,8 @@ import os
 from html import escape
 
 from fastapi import FastAPI, Form, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
+from fastapi.responses import (FileResponse, HTMLResponse, JSONResponse,
+                               RedirectResponse, Response)
 
 from datetime import datetime
 
@@ -52,7 +53,8 @@ async def security_headers(request: Request, call_next):
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Content-Security-Policy"] = (
         "default-src 'none'; style-src 'unsafe-inline'; media-src 'self'; "
-        "form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
+        "script-src 'self'; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; "
+        "connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
     if request.url.path.endswith("/feed.xml") or "/media/" in request.url.path:
         response.headers["Cache-Control"] = "private, max-age=0"
     if auth.is_https(request):
@@ -130,6 +132,13 @@ footer.ver{margin-top:40px;padding-top:12px;border-top:1px solid var(--line);col
 
 LOGIN_PAGE = """<!doctype html><html lang="cs"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/static/icon-192.png" sizes="192x192">
+<link rel="apple-touch-icon" href="/static/icon-180.png">
+<meta name="theme-color" content="#12151a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Podcast">
+<script src="/static/app.js" defer></script>
 <title>Přihlášení · Podcast agent</title><style>{css}</style></head><body>
 <header>Podcast agent</header><main><div class="panel login">
 <h1>Přihlášení</h1>{err}
@@ -227,6 +236,13 @@ def settings_page(cfg, session: str, msg="", err="", detail="", new_key="",
                     "aktivní klíč z téhle stránky. Až ho smažeš, vrátí se ten z prostředí.</div>")
     return """<!doctype html><html lang="cs"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/static/icon-192.png" sizes="192x192">
+<link rel="apple-touch-icon" href="/static/icon-180.png">
+<meta name="theme-color" content="#12151a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Podcast">
+<script src="/static/app.js" defer></script>
 <title>Administrace · Podcast agent</title><style>{css}</style></head><body>
 <header><span>Podcast agent</span>
 <nav><a href="/" class="{nav_shows}">Pořady</a> <a href="/dily">Díly</a> <a href="/nastaveni" class="{nav_settings}">Nastavení</a></nav>
@@ -511,7 +527,14 @@ def feed_rotate(request: Request, csrf: str = Form("")):
 # ------------------------------------------------------------- pořady
 
 SHOWS_PAGE = """<!doctype html><html lang="cs"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">{refresh}
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/static/icon-192.png" sizes="192x192">
+<link rel="apple-touch-icon" href="/static/icon-180.png">
+<meta name="theme-color" content="#12151a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Podcast">
+<script src="/static/app.js" defer></script>{refresh}
 <title>Pořady · Podcast agent</title><style>{css}</style></head><body>
 <header><span>Podcast agent</span>
 <nav><a href="/" class="on">Pořady</a> <a href="/dily">Díly</a> <a href="/nastaveni">Nastavení</a></nav>
@@ -737,6 +760,13 @@ def shows_run(slug: str, request: Request, csrf: str = Form(""), mode: str = For
 
 DRAFT_PAGE = """<!doctype html><html lang="cs"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/static/icon-192.png" sizes="192x192">
+<link rel="apple-touch-icon" href="/static/icon-180.png">
+<meta name="theme-color" content="#12151a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Podcast">
+<script src="/static/app.js" defer></script>
 <title>{title} · Podcast agent</title><style>{css}</style></head><body>
 <header><span>Podcast agent</span>
 <nav><a href="/" class="on">Pořady</a> <a href="/dily">Díly</a> <a href="/nastaveni">Nastavení</a></nav>
@@ -965,7 +995,14 @@ def _int(value, default=0) -> int:
 # ------------------------------------------------------------------ díly
 
 EPISODES_PAGE = """<!doctype html><html lang="cs"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">{refresh}
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/static/icon-192.png" sizes="192x192">
+<link rel="apple-touch-icon" href="/static/icon-180.png">
+<meta name="theme-color" content="#12151a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Podcast">
+<script src="/static/app.js" defer></script>{refresh}
 <title>Díly · Podcast agent</title><style>{css}</style></head><body>
 <header><span>Podcast agent</span>
 <nav><a href="/">Pořady</a> <a href="/dily" class="on">Díly</a> <a href="/nastaveni">Nastavení</a></nav>
@@ -980,7 +1017,14 @@ i dny, které se rozbily v půlce. Detail ukáže každý dotaz do proxy a to, n
 </main></body></html>"""
 
 RUN_PAGE = """<!doctype html><html lang="cs"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">{refresh}
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/static/icon-192.png" sizes="192x192">
+<link rel="apple-touch-icon" href="/static/icon-180.png">
+<meta name="theme-color" content="#12151a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Podcast">
+<script src="/static/app.js" defer></script>{refresh}
 <title>{stamp} · {show} · Podcast agent</title><style>{css}</style></head><body>
 <header><span>Podcast agent</span>
 <nav><a href="/">Pořady</a> <a href="/dily" class="on">Díly</a> <a href="/nastaveni">Nastavení</a></nav>
@@ -1266,3 +1310,57 @@ def sample_audio(name: str, request: Request):
         raise HTTPException(404, "ukázka není")
     return FileResponse(path, media_type=feedmod.MIME.get(os.path.splitext(path)[1].lower(),
                                                           "audio/mpeg"))
+
+
+# ------------------------------------------------------- appka na mobil (PWA)
+
+STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+STATIC_TYPES = {".js": "text/javascript", ".png": "image/png", ".svg": "image/svg+xml",
+                ".css": "text/css"}
+
+MANIFEST = {
+    "name": "Podcast agent",
+    "short_name": "Podcast",
+    "description": "Správa pořadů, dílů a nastavení podcastového agenta.",
+    "start_url": "/",
+    "scope": "/",
+    "display": "standalone",
+    "orientation": "portrait",
+    "background_color": "#12151a",
+    "theme_color": "#12151a",
+    "lang": "cs",
+    "icons": [
+        {"src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png"},
+        {"src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png"},
+        {"src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png",
+         "purpose": "maskable"},
+    ],
+    "shortcuts": [
+        {"name": "Díly", "url": "/dily"},
+        {"name": "Nastavení", "url": "/nastaveni"},
+    ],
+}
+
+
+@app.get("/manifest.webmanifest", include_in_schema=False)
+def manifest():
+    """Popis appky pro prohlížeč. Žádné tajemství tu není, tak je veřejný —
+    prohlížeč si ho tahá i v situacích, kdy cookie sezení neposílá."""
+    return JSONResponse(MANIFEST, media_type="application/manifest+json")
+
+
+@app.get("/sw.js", include_in_schema=False)
+def service_worker():
+    """Musí se servírovat z kořene, jinak by mu scope nesahal na celou appku."""
+    return FileResponse(os.path.join(STATIC_DIR, "sw.js"), media_type="text/javascript",
+                        headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/static/{name}", include_in_schema=False)
+def static_file(name: str):
+    path = os.path.abspath(os.path.join(STATIC_DIR, name))
+    if not path.startswith(os.path.abspath(STATIC_DIR) + os.sep) or not os.path.isfile(path):
+        raise HTTPException(404, "není")
+    return FileResponse(path, media_type=STATIC_TYPES.get(os.path.splitext(path)[1].lower(),
+                                                          "application/octet-stream"),
+                        headers={"Cache-Control": "public, max-age=86400"})
