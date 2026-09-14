@@ -1429,11 +1429,14 @@ def search_test(request: Request, csrf: str = Form("")):
     url = (cfg.path("search.url") or "").strip()
     if not url:
         return back(err="Nejdřív vyplň adresu vyhledávače.", where="/nastaveni")
-    hits = topicmod.web_search(url, SEARCH_PROBE, int(cfg.path("search.results", 3)))
+    notes = []
+    hits = topicmod.web_search(url, SEARCH_PROBE, int(cfg.path("search.results", 3)),
+                               notes=notes)
+    detail = (" (" + " · ".join(notes) + ")") if notes else ""
     if not hits:
-        return back(err="Vyhledávač nic nevrátil. Nejčastěji chybí `json` v `search.formats` "
-                        "v settings.yml (pak posílá HTML), nebo dotaz odmítl limiter — "
-                        "zkus `server.limiter: false`. Podrobnost je v logu aplikace.",
+        return back(err="Vyhledávač nepoužitelný" + detail
+                    + ". Když mlčí jen některé vyhledávače, vypni je v settings.yml "
+                      "(u DuckDuckGo to bývá CAPTCHA) a nech ty, co odpovídají.",
                     where="/nastaveni")
     return back(msg="Vyhledávač odpovídá, " + str(len(hits)) + " výsledků: "
-                + ", ".join(h["link"] for h in hits[:3]), where="/nastaveni")
+                + ", ".join(h["link"] for h in hits[:3]) + detail, where="/nastaveni")

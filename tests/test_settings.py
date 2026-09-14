@@ -2,6 +2,7 @@
 
 import importlib
 import os
+from urllib.parse import unquote
 
 import pytest
 from fastapi.testclient import TestClient
@@ -146,9 +147,14 @@ def test_search_test_button_says_what_is_wrong(client, monkeypatch):
     settings.save({**settings.overrides(), "search.url": "http://searxng:8080"})
     assert "Otestovat vyhledávač" in client.get("/nastaveni").text
 
-    monkeypatch.setattr(topicmod, "web_search", lambda *a, **kw: [])
+    def dead_engines(*a, **kw):
+        kw["notes"].append("mlčící vyhledávače: duckduckgo: CAPTCHA")
+        return []
+
+    monkeypatch.setattr(topicmod, "web_search", dead_engines)
     r = client.post("/hledani/test", data={"csrf": csrf(client)}, follow_redirects=False)
-    assert "err=" in r.headers["location"] and "search.formats" in r.headers["location"]
+    assert "err=" in r.headers["location"]
+    assert "CAPTCHA" in unquote(r.headers["location"])      # řekne, který vyhledávač mlčí
 
     monkeypatch.setattr(topicmod, "web_search",
                         lambda *a, **kw: [{"title": "T", "link": "https://a.cz/x"}])

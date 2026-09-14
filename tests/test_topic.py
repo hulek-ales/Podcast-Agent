@@ -225,3 +225,40 @@ def test_unreachable_engine_does_not_kill_the_run(monkeypatch):
 
     monkeypatch.setattr(topicmod.urllib.request, "urlopen", boom)
     assert topicmod.web_search("http://searxng:8080", "cokoliv") == []
+
+
+def test_search_says_which_engine_died(monkeypatch):
+    """„Nic se nenašlo“ může znamenat cokoli — od vypnutého JSONu po CAPTCHU
+    na jednom z vyhledávačů. Musí být poznat co."""
+    from podcast import topic as topicmod
+
+    payload = {"results": [], "unresponsive_engines": [["duckduckgo", "CAPTCHA"]]}
+    monkeypatch.setattr(topicmod.urllib.request, "urlopen",
+                        lambda *a, **kw: _Resp(json.dumps(payload).encode()))
+    notes = []
+    assert topicmod.web_search("http://searxng:8080", "x", notes=notes) == []
+    assert "duckduckgo" in notes[0] and "CAPTCHA" in notes[0]
+
+
+def test_html_response_is_named_as_such(monkeypatch):
+    from podcast import topic as topicmod
+
+    monkeypatch.setattr(topicmod.urllib.request, "urlopen",
+                        lambda *a, **kw: _Resp(b"<!doctype html><html>"))
+    notes = []
+    assert topicmod.web_search("http://searxng:8080", "x", notes=notes) == []
+    assert "search.formats" in notes[0]
+
+
+def test_results_survive_a_dead_engine(monkeypatch):
+    """Jeden vyhledávač s CAPTCHOU nesmí shodit celé hledání."""
+    from podcast import topic as topicmod
+
+    payload = {"results": [{"url": "https://a.cz/x", "title": "T"}],
+               "unresponsive_engines": [["duckduckgo", "CAPTCHA"]]}
+    monkeypatch.setattr(topicmod.urllib.request, "urlopen",
+                        lambda *a, **kw: _Resp(json.dumps(payload).encode()))
+    notes = []
+    hits = topicmod.web_search("http://searxng:8080", "x", notes=notes)
+    assert [h["link"] for h in hits] == ["https://a.cz/x"]
+    assert notes                                   # ale poznamená, že něco mlčelo

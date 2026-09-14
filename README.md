@@ -449,6 +449,21 @@ search:
 Pak v administraci agenta Nastavení → *Adresa vyhledávače* = `http://searxng:8080`
 a *Výsledků na dotaz* třeba 3. Port ven vystavovat nemusíš, volá ho jen agent.
 
+Některé vyhledávače (typicky DuckDuckGo) na dotazy z domácí IP odpovídají CAPTCHOU
+a v logu SearXNG z toho padá `SearxEngineCaptchaException`. Není to chyba
+nastavení a nezabíjí to hledání — ostatní vyhledávače odpovídají dál a SearXNG
+si ten problémový na chvíli sám odstaví. Když se to opakuje, vypni ho
+v `settings.yml`:
+
+```yaml
+engines:
+  - name: duckduckgo
+    disabled: true
+```
+
+a nech zapnuté ty, co odpovídají (pro češtinu se osvědčí `seznam`, `mojeek`,
+`brave`, `wikipedia`).
+
 Ověření: v administraci Nastavení → **Zkouška vyhledávače** → *Otestovat*.
 Buď vypíše nalezené odkazy, nebo řekne, co je špatně. Z příkazové řádky totéž:
 `curl 'http://searxng:8080/search?q=test&format=json' | head -c 200` — když přijde

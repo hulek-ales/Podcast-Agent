@@ -136,21 +136,42 @@ def queries(opx, cfg, topic: str) -> dict:
 
 
 def web_search(base_url: str, query: str, limit: int = 4, lang: str = "cs",
-               timeout: float = 20.0) -> list:
+               timeout: float = 20.0, notes: list = None) -> list:
     """Výsledky z vlastní instance SearXNG ({base}/search?format=json).
 
     Schválně jen vlastní instance: cizí vyhledávač se scrapovat nemá a placené
     API by znamenalo další klíč. Kdo chce širší záběr, spustí si SearXNG vedle
-    agenta (je to jeden kontejner) a vyplní adresu v nastavení."""
+    agenta (je to jeden kontejner) a vyplní adresu v nastavení.
+
+    Do `notes` se přidá, co se pokazilo. SearXNG se ptá víc vyhledávačů naráz,
+    takže „nic se nenašlo“ může znamenat cokoli od vypnutého JSONu po to, že
+    zrovna DuckDuckGo hodil CAPTCHU — a hádat se to nedá."""
+    def note(text):
+        if notes is not None and text not in notes:
+            notes.append(text)
+
     url = base_url.rstrip("/") + "/search?" + urllib.parse.urlencode(
         {"q": query, "format": "json", "language": lang, "safesearch": 0})
     req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "application/json"})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            data = json.loads(resp.read().decode("utf-8", "replace"))
+            raw = resp.read()
     except Exception as exc:
+        note("vyhledávač neodpověděl: " + str(exc)[:150])
         print("[téma] vyhledávač neodpověděl (" + str(exc)[:120] + ")", flush=True)
         return []
+    try:
+        data = json.loads(raw.decode("utf-8", "replace"))
+    except ValueError:
+        note("vrátil HTML místo JSONu — chybí `json` v `search.formats` v settings.yml")
+        print("[téma] vyhledávač poslal HTML, ne JSON", flush=True)
+        return []
+
+    dead = [str(e) for e in (data.get("unresponsive_engines") or [])]
+    if dead:
+        note("mlčící vyhledávače: " + "; ".join(dead[:6]))
+        print("[téma] mlčí: " + "; ".join(dead[:6]), flush=True)
+
     out = []
     for row in (data.get("results") or [])[:limit * 3]:
         link = (row.get("url") or "").strip()
@@ -159,6 +180,8 @@ def web_search(base_url: str, query: str, limit: int = 4, lang: str = "cs",
         out.append({"title": (row.get("title") or link).strip(), "link": link})
         if len(out) >= limit:
             break
+    if not out and not dead:
+        note("odpověděl, ale bez výsledků — zkus jiný dotaz nebo zapni další vyhledávače")
     return out
 
 
