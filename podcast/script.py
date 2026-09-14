@@ -48,6 +48,41 @@ Vrať POUZE JSON v tomto tvaru, bez komentářů a bez markdown bloku:
   "segments": [{{"title": "krátký název tématu", "text": "mluvený text tématu"}}],
   "outro": "rozloučení, 1-2 věty"}}"""
 
+TOPIC_SYSTEM = (
+    "Jsi scenárista populárně-naučného podcastu. Z výtahů ze zdrojů napíšeš "
+    "souvislý díl o jednom tématu, který bude někdo číst nahlas.\n\n"
+    "Pravidla:\n"
+    "- Piš pro ucho: krátké věty, jedna myšlenka na větu, žádné odrážky, "
+    "závorky, uvozovky ani odkazy.\n"
+    "- Veď posluchače příběhem: od toho, co zná, k tomu, co ho překvapí. "
+    "Kapitoly na sebe navazují, ne aby to byl seznam faktů.\n"
+    "- Čísla rozepiš slovy ve správném tvaru: \"šedesát šest milionů let\", "
+    "\"deset kilometrů\". Velká čísla raději zaokrouhli.\n"
+    "- Odborný termín při prvním použití vysvětli jednou větou.\n"
+    "- Drž se faktů z podkladů. Nic si nedomýšlej. Co je sporné nebo se neví "
+    "jistě, řekni jako sporné — ne jako fakt.\n"
+    "- Aspoň jednou v dílu řekni nahlas, odkud podklady jsou.\n"
+    "- Nezačínej frázemi typu \"v dnešním díle se podíváme\"; rovnou k věci."
+)
+
+TOPIC_USER = """Napiš díl podcastu na téma: {topic}
+
+Formát: {style}
+Délka: zhruba {minutes} minut mluveného slova (asi {chars} znaků celkem).
+Kapitol: {chapters}
+
+{extra}Podklady ze zdrojů:
+
+{topics}
+
+Kapitoly si rozvrhni sám tak, aby díl dával smysl jako celek — podklady jsou
+materiál, ne osnova. Vrať POUZE JSON v tomto tvaru, bez komentářů a bez
+markdown bloku:
+{{"title": "titulek dílu, max 60 znaků",
+  "intro": "čím díl otevřít, 2-3 věty",
+  "segments": [{{"title": "krátký název kapitoly", "text": "mluvený text kapitoly"}}],
+  "outro": "rozloučení, 1-2 věty"}}"""
+
 STYLES = {
     "anchor": "jeden moderátor, klidný tón veřejnoprávního rozhlasu",
     "brief": "jeden moderátor, svižný přehled headlinů, u každého dvě věty",
@@ -118,16 +153,25 @@ def parse_json(raw: str) -> dict:
     return json.loads(text[start:end + 1])
 
 
-def build(opx, cfg, clusters: list, date_label: str) -> dict:
-    """Vrátí díl: {title, intro, segments[{title,text}], outro} už normalizovaný."""
+def build(opx, cfg, clusters: list, date_label: str, topic: str = "") -> dict:
+    """Vrátí díl: {title, intro, segments[{title,text}], outro} už normalizovaný.
+
+    S `topic` jde o tematický díl — jiné zadání i jiná role: místo přehledu
+    zpráv souvislé vyprávění o jedné věci."""
     style = cfg.path("episode.style", "anchor")
     minutes = float(cfg.path("episode.minutes", 9))
     wish = (cfg.path("episode.prompt_extra") or "").strip()
-    prompt = USER.format(
-        date=date_label, style=STYLES.get(style, STYLES["anchor"]),
-        minutes=int(minutes), chars=int(minutes * 60 * 15),   # ~15 znaků za vteřinu řeči
-        extra=("Zvláštní pokyny k tomuhle pořadu:\n" + wish + "\n\n") if wish else "",
-        topics=topics_block(clusters))
+    extra_block = ("Zvláštní pokyny k tomuhle pořadu:\n" + wish + "\n\n") if wish else ""
+    common = dict(style=STYLES.get(style, STYLES["anchor"]), minutes=int(minutes),
+                  chars=int(minutes * 60 * 15),            # ~15 znaků za vteřinu řeči
+                  extra=extra_block, topics=topics_block(clusters))
+    if topic:
+        system = TOPIC_SYSTEM
+        prompt = TOPIC_USER.format(topic=topic,
+                                   chapters=int(cfg.path("episode.stories", 7)), **common)
+    else:
+        system = SYSTEM
+        prompt = USER.format(date=date_label, **common)
     provider = cfg.need("models.script_provider")
     model = cfg.need("models.script")
     # temperature se posílá, jen když ji někdo vyplní: modely řady gpt-5 jinou než
@@ -136,11 +180,12 @@ def build(opx, cfg, clusters: list, date_label: str) -> dict:
     temperature = cfg.path("episode.temperature")
     if temperature not in (None, ""):
         extra["temperature"] = float(temperature)
-    print("[scénář] " + provider + "/" + model + ", témat: " + str(len(clusters))
+    print("[scénář] " + provider + "/" + model + (", téma: " + topic if topic else "")
+          + ", podkladů: " + str(len(clusters))
           + (", temperature " + str(extra["temperature"]) if extra else ""), flush=True)
     try:
         answer = opx.provider_chat(provider, model,
-                                   [{"role": "system", "content": SYSTEM},
+                                   [{"role": "system", "content": system},
                                     {"role": "user", "content": prompt}], **extra)
     except OpxError as exc:
         raise SystemExit("scénář selhal: " + str(exc) + hint(exc, extra))

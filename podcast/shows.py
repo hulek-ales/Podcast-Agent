@@ -23,6 +23,10 @@ from .keys import store_path as _keys_path
 
 DAYS = ("po", "út", "st", "čt", "pá", "so", "ne")
 STYLES = ("anchor", "brief", "duo")
+# Dva druhy pořadu. Zpravodajský si materiál bere z RSS a jede podle rozvrhu;
+# tematický dostane zadané téma a podklady si k němu najde (Wikipedie, vlastní
+# odkazy). Zbytek roury — shrnutí, scénář, hlas, feed — mají společný.
+KINDS = ("zpravy", "tema")
 
 DEFAULTS = {
     "title": "Přehled dne",
@@ -30,6 +34,9 @@ DEFAULTS = {
     "enabled": True,
     "time": "03:10",              # HH:MM, kdy se pořad vyrábí
     "days": [0, 1, 2, 3, 4, 5, 6],   # 0 = pondělí
+    "kind": "zpravy",
+    "topic": "",                 # jen tematický pořad: o čem je příští díl
+    "links": [],                 # jen tematický pořad: vlastní zdroje k tématu
     "style": "anchor",
     "minutes": 9,
     "stories": 7,
@@ -115,8 +122,14 @@ def upsert(show: dict) -> dict:
         raise ValueError("identifikátor '" + slug + "' je vyhrazený, zvol jiný")
     if not (show.get("title") or "").strip():
         raise ValueError("pořad potřebuje název")
-    if not show.get("feeds"):
-        raise ValueError("pořad potřebuje aspoň jeden zdroj")
+    kind = show.get("kind") or "zpravy"
+    if kind not in KINDS:
+        raise ValueError("druh pořadu musí být " + ", ".join(KINDS))
+    if kind == "tema":
+        if not (show.get("topic") or "").strip():
+            raise ValueError("tematický pořad potřebuje téma")
+    elif not show.get("feeds"):
+        raise ValueError("zpravodajský pořad potřebuje aspoň jeden zdroj")
     if show.get("style") not in STYLES:
         raise ValueError("styl musí být " + ", ".join(STYLES))
     if not re.match(r"^([01]?\d|2[0-3]):[0-5]\d$", str(show.get("time", ""))):
@@ -162,6 +175,20 @@ def parse_feeds(raw) -> list:
             except ValueError:
                 pass
         out.append(feed)
+    return out
+
+
+def links_text(show: dict) -> str:
+    return "\n".join(show.get("links") or [])
+
+
+def parse_links(text: str) -> list:
+    """Vlastní zdroje tematického pořadu — jedna adresa na řádek."""
+    out = []
+    for line in (text or "").splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and line not in out:
+            out.append(line)
     return out
 
 

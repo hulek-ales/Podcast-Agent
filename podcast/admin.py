@@ -563,9 +563,24 @@ Když ho přegeneruješ, všechny pořady musíš ve čtečce přidat znovu.</di
 </div>
 <div class="field"><label for="description">Popis (ukáže se ve čtečce)</label>
   <input id="description" name="description" value="{f_description}"></div>
+<div class="field"><label for="kind">Druh pořadu</label>
+  <select id="kind" name="kind">{kinds}</select>
+  <div class="help"><b>Zpravodajský</b> sbírá z RSS a jede podle rozvrhu.
+  <b>Tematický</b> dostane téma, podklady si k němu najde na Wikipedii (plus tvoje odkazy)
+  a díl vyrobíš ručně tlačítkem — každé nové téma je další díl v tom samém feedu.</div></div>
+<div class="field"><label for="topic">Téma příštího dílu (jen tematický pořad)</label>
+  <input id="topic" name="topic" value="{f_topic}" placeholder="Vyhynutí dinosaurů">
+  <div class="help">Napiš to jako název: „Vyhynutí dinosaurů“, „Jak funguje kvantový počítač“,
+  „Historie šifrování“. Podle toho se hledá na Wikipedii, takže konkrétní pojem je lepší
+  než otázka.</div></div>
+<div class="field"><label for="links">Vlastní zdroje k tématu — jedna adresa na řádek (nepovinné)</label>
+  <textarea id="links" name="links" style="min-height:70px">{f_links}</textarea>
+  <div class="help">Článek, studie, cokoli, co má být v podkladech vedle Wikipedie.
+  Text z nich se dotáhne stejně jako u zpráv.</div></div>
 <div class="field"><label for="feeds">Zdroje — jedna adresa na řádek, volitelně <code>adresa | název | váha</code></label>
-  <textarea id="feeds" name="feeds" style="min-height:150px" required>{f_feeds}</textarea>
-  <div class="help">Váha nad 1 téma zvýhodní, pod 1 potlačí. Řádek začínající # se přeskočí.</div></div>
+  <textarea id="feeds" name="feeds" style="min-height:150px">{f_feeds}</textarea>
+  <div class="help">Jen zpravodajský pořad. Váha nad 1 téma zvýhodní, pod 1 potlačí.
+  Řádek začínající # se přeskočí.</div></div>
 <div class="field"><label for="prompt_extra">Zadání pro tenhle pořad (nepovinné)</label>
   <textarea id="prompt_extra" name="prompt_extra" style="min-height:70px">{f_prompt}</textarea>
   <div class="help">Volný pokyn scénáristovi: „zaměř se na technologie a vynech sport“,
@@ -631,9 +646,14 @@ def show_cards(cfg, token: str, running: str = "") -> str:
             '<div class="panel"><div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap">'
             + "<div><b>" + escape(show["title"]) + "</b> "
             + ('<span class="ok">●</span>' if show.get("enabled") else '<span class="mute">○ vypnutý</span>')
-            + '<div class="help">' + escape(shows.describe_schedule(show)) + " · "
-            + str(len(show["feeds"])) + " zdrojů · " + str(show["minutes"]) + " min · "
-            + str(show["stories"]) + " témat · dílů " + str(len(episodes)) + "</div>"
+            + '<div class="help">'
+            + (("téma: " + escape(show.get("topic") or "zatím nezadané") + " · ")
+               if show.get("kind") == "tema" else
+               (escape(shows.describe_schedule(show)) + " · "
+                + str(len(show["feeds"])) + " zdrojů · "))
+            + str(show["minutes"]) + " min · " + str(show["stories"])
+            + (" kapitol" if show.get("kind") == "tema" else " témat")
+            + " · dílů " + str(len(episodes)) + "</div>"
             + '<div class="help">naposledy: ' + escape((last or "—").replace("T", " ")) + " · příště: "
             + escape(shows.next_run(show).strftime("%a %d.%m. %H:%M") if show.get("enabled") else "—")
             + "</div>" + note + "</div>"
@@ -684,6 +704,12 @@ def shows_page(cfg, session: str, msg="", err="", edit: str = "") -> str:
         f_description=escape(form.get("description", "")),
         f_feeds=escape(shows.feeds_text(form if show or form.get("feeds")
                                         else {"feeds": shows.STARTER_FEEDS})),
+        f_topic=escape(str(form.get("topic", "") or "")),
+        f_links=escape(shows.links_text(form)),
+        kinds="".join('<option value="' + k + '"' + (" selected" if form.get("kind", "zpravy") == k
+                                                     else "") + ">" + label + "</option>"
+                      for k, label in (("zpravy", "zpravodajský — z RSS, podle rozvrhu"),
+                                       ("tema", "tematický — jedno téma, ručně"))),
         f_prompt=escape(form.get("prompt_extra", "")),
         f_minutes=form["minutes"], f_stories=form["stories"], f_age=form["max_age_hours"],
         f_time=escape(str(form["time"])), f_voice=escape(form.get("voice", "")),
@@ -720,6 +746,9 @@ async def shows_save(request: Request):
     show = {
         "slug": slug, "title": title,
         "description": (form.get("description") or "").strip(),
+        "kind": (form.get("kind") or "zpravy").strip(),
+        "topic": (form.get("topic") or "").strip(),
+        "links": shows.parse_links(form.get("links")),
         "feeds": shows.parse_feeds(form.get("feeds")),
         "prompt_extra": (form.get("prompt_extra") or "").strip(),
         "style": form.get("style") or "anchor",

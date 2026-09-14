@@ -16,7 +16,7 @@ import traceback
 from datetime import datetime
 
 from . import (cluster, collect, config, feed as feedmod, script, shows, speak, state,
-               summarize, trace)
+               summarize, topic as topicmod, trace)
 
 _lock = threading.Lock()          # jeden díl v jednu chvíli
 _current = None                   # slug běžícího pořadu
@@ -36,7 +36,8 @@ def show_config(cfg, show: dict):
     merged = config.Config({k: dict(v) if isinstance(v, dict) else v for k, v in cfg.items()})
     episode = dict(merged.get("episode") or {})
     for key in ("style", "minutes", "stories", "max_age_hours", "similarity", "fulltext",
-                "temperature", "voice", "language", "response_format", "prompt_extra"):
+                "temperature", "voice", "language", "response_format", "prompt_extra",
+                "topic"):
         episode[key] = show.get(key, episode.get(key))
     merged["episode"] = episode
     merged["feeds"] = show["feeds"]
@@ -106,33 +107,51 @@ def _produce(show: dict, day: datetime, steps, resume: bool) -> dict:
     trace.step("běh", show["title"] + ", " + stamp + ", kroky: " + ", ".join(steps))
     opx = trace.Traced(config.client(cfg))
 
+    subject = (show.get("topic") or "").strip() if show.get("kind") == "tema" else ""
+
     articles = work.load("collect")
     if articles is None:
-        trace.step("sběr", str(len(cfg.need("feeds"))) + " zdrojů")
-        articles = collect.collect(cfg.need("feeds"), float(cfg.path("episode.max_age_hours", 24)))
-        if not articles:
-            return _done(slug, False, "žádné články ze zdrojů")
+        if subject:
+            trace.step("podklady", "téma „" + subject + "“ + "
+                       + str(len(show.get("links") or [])) + " vlastních odkazů")
+            articles = topicmod.gather(subject, show.get("links"))
+            if not articles:
+                return _done(slug, False, "k tématu „" + subject + "“ se nenašly žádné podklady "
+                             "— zkus téma napsat jinak, nebo přidej vlastní odkazy")
+        else:
+            trace.step("sběr", str(len(cfg.need("feeds"))) + " zdrojů")
+            articles = collect.collect(cfg.need("feeds"),
+                                       float(cfg.path("episode.max_age_hours", 24)))
+            if not articles:
+                return _done(slug, False, "žádné články ze zdrojů")
         work.save("collect", articles)
 
     clusters = work.load("cluster")
     if clusters is None:
-        trace.step("shlukování", str(len(articles)) + " článků → "
-                   + str(cfg.path("episode.stories", 7)) + " témat")
-        clusters = cluster.build(opx, cfg.need("models.embed"), articles,
-                                 int(cfg.path("episode.stories", 7)),
-                                 float(cfg.path("episode.similarity", 0.80)))
-        if cfg.path("episode.fulltext", True):
-            for cl in clusters:
-                collect.fetch_fulltext(cl["articles"][:3])
+        if subject:
+            # shlukovat podle podobnosti nemá co dělat — všechno je k jednomu tématu
+            trace.step("výběr podkladů", str(len(articles)) + " zdrojů")
+            clusters = topicmod.chapters(articles, int(cfg.path("episode.stories", 7)))
+        else:
+            trace.step("shlukování", str(len(articles)) + " článků → "
+                       + str(cfg.path("episode.stories", 7)) + " témat")
+            clusters = cluster.build(opx, cfg.need("models.embed"), articles,
+                                     int(cfg.path("episode.stories", 7)),
+                                     float(cfg.path("episode.similarity", 0.80)))
+            if cfg.path("episode.fulltext", True):
+                for cl in clusters:
+                    collect.fetch_fulltext(cl["articles"][:3])
         work.save("cluster", clusters)
 
     summaries = work.load("summarize")
     if summaries is None:
-        trace.step("shrnutí", str(len(clusters)) + " témat přes frontu úloh")
+        trace.step("shrnutí", str(len(clusters)) + (" podkladů" if subject else " témat")
+                   + " přes frontu úloh")
         summaries = summarize.run(opx, cfg.need("models.summarize"), clusters,
                                   priority=int(cfg.path("jobs.priority", 7)),
                                   poll=float(cfg.path("jobs.poll_s", 10)),
-                                  timeout=float(cfg.path("jobs.timeout_s", 5400)))
+                                  timeout=float(cfg.path("jobs.timeout_s", 5400)),
+                                  topic=subject)
         if not summaries:
             return _done(slug, False, "žádné téma se nepodařilo shrnout")
         work.save("summarize", summaries)
@@ -140,8 +159,9 @@ def _produce(show: dict, day: datetime, steps, resume: bool) -> dict:
     episode = work.load("script")
     if episode is None:
         trace.step("scénář", str(cfg.path("models.script")) + " ("
-                   + str(cfg.path("models.script_provider") or "ollama") + ")")
-        episode = script.build(opx, cfg, summaries, date_label(day))
+                   + str(cfg.path("models.script_provider") or "ollama") + ")"
+                   + (", téma " + subject if subject else ""))
+        episode = script.build(opx, cfg, summaries, date_label(day), topic=subject)
         work.save("script", episode)
     with open(os.path.join(work.dir, "scenar.md"), "w", encoding="utf-8") as f:
         f.write(script.as_markdown(episode))

@@ -391,6 +391,31 @@ Service worker schválně **nic necachuje**. Administrace ukazuje stav běhů a
 fronty a odpověď ze cache by lhala o tom, co se zrovna děje; díly si stejně
 stahuje čtečka podcastů, ne tahle stránka.
 
+## Tematické díly
+
+Pořad nemusí být jen přehled zpráv. V druhu pořadu přepni na **tematický** a místo
+RSS zadej téma — „Vyhynutí dinosaurů", „Jak funguje kvantový počítač", „Historie
+šifrování". Agent si k němu najde podklady a napíše souvislý díl.
+
+Podklady se **nevymýšlejí z hlavy modelu**. Platí tu stejné pravidlo jako
+u zpráv: napřed sežeň text, pak z něj piš. Díl o dinosaurech poskládaný z paměti
+modelu zní stejně sebejistě, ať jsou fakta správně, nebo ne, a ověřit to nejde.
+Zdroje jsou proto dva:
+
+- **Wikipedie** — téma se vyhledá česky (a když je český článek hubený, i anglicky)
+  a stáhne se holý text hesel. Bez klíče, s odkazem, který se dá v dílu přiznat.
+- **vlastní odkazy** — cokoli přidáš u pořadu; text z nich dotáhne trafilatura.
+
+Dál běží stejná roura: lokální model udělá z každého podkladu hutný výtah (přes
+frontu úloh), komerční model z výtahů napíše díl rozvržený do kapitol, a pak hlas
+a feed. Scénárista má jiné zadání než u zpráv — vede posluchače příběhem, odborný
+termín při prvním použití vysvětlí, a co je sporné, řekne jako sporné.
+
+Tematický pořad **nejede podle rozvrhu**: napíšeš téma, dáš *napsat text*,
+přečteš si ho a pustíš *namluvit*. Pak přepíšeš téma a uděláš další díl — všechny
+zůstávají v jednom feedu, takže v telefonu je to jeden podcast, ke kterému
+přibývají díly, kdykoli tě něco napadne.
+
 ## Díly a průběh
 
 Záložka **Díly** je deník výroby: jeden řádek na každý den každého pořadu —
