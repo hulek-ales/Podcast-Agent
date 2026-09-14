@@ -25,7 +25,7 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Resp
 from datetime import datetime
 
 from . import (auth, config, feed as feedmod, keys, runner, script, settings as prefs,
-               shows, state, version)
+               shows, speak, state, version)
 from .opx import OpxClient, OpxError
 
 app = FastAPI(title="Podcast agent", docs_url=None, redoc_url=None, openapi_url=None)
@@ -51,8 +51,8 @@ async def security_headers(request: Request, call_next):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Content-Security-Policy"] = (
-        "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; "
-        "base-uri 'none'; frame-ancestors 'none'")
+        "default-src 'none'; style-src 'unsafe-inline'; media-src 'self'; "
+        "form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
     if request.url.path.endswith("/feed.xml") or "/media/" in request.url.path:
         response.headers["Cache-Control"] = "private, max-age=0"
     if auth.is_https(request):
@@ -215,7 +215,8 @@ def settings_form(token: str) -> str:
             + '<button style="margin-top:8px">Uložit nastavení</button></form></div>')
 
 
-def settings_page(cfg, session: str, msg="", err="", detail="", new_key="") -> str:
+def settings_page(cfg, session: str, msg="", err="", detail="", new_key="",
+                  played="") -> str:
     token = auth.csrf(session)
     key, key_src = config.proxy_key(cfg)
     url, url_src = config.proxy_url(cfg)
@@ -283,6 +284,9 @@ použije se jednou a zapomene.</p>
 <h2>Chování agenta</h2>
 {prefs}
 
+<h2>Zkouška hlasu</h2>
+{sample}
+
 <h2>Heslo do administrace</h2>
 <div class="panel"><form method="post" action="/settings/password">
 <input type="hidden" name="csrf" value="{token}">
@@ -307,21 +311,23 @@ použije se jednou a zapomene.</p>
                  'Změň si ho dole — do té doby se vypisuje do logu při každém startu.</div>')
                 if auth.initial_password() else "",
         saved_url=escape(state.load().get("proxy_url", "")), min_pw=auth.MIN_PASSWORD,
-        prefs=settings_form(token),
+        prefs=settings_form(token), sample=sample_panel(cfg, token, played),
         url=escape(url or "—"), url_src=escape(url_src), key_src=escape(key_src),
         masked=escape(keys.mask(key)) if key else "—",
         wanted=escape(", ".join(m for m in wanted if m)))
 
 
-def render(session: str, msg="", err="", detail="", new_key="") -> HTMLResponse:
+def render(session: str, msg="", err="", detail="", new_key="", played="") -> HTMLResponse:
     cfg = config.load()
-    return HTMLResponse(settings_page(cfg, session, msg, err, detail, new_key))
+    return HTMLResponse(settings_page(cfg, session, msg, err, detail, new_key, played))
 
 
 def back(msg="", err="", where="/nastaveni") -> RedirectResponse:
     from urllib.parse import urlencode
     query = urlencode({k: v for k, v in (("msg", msg), ("err", err)) if v})
-    return RedirectResponse(where + ("?" + query if query else ""), status_code=303)
+    if not query:
+        return RedirectResponse(where, status_code=303)
+    return RedirectResponse(where + ("&" if "?" in where else "?") + query, status_code=303)
 
 
 # ---------------------------------------------------------------- routy
@@ -848,7 +854,8 @@ def shows_delete(slug: str, request: Request, csrf: str = Form("")):
 def settings(request: Request):
     session = require(request)
     return render(session, msg=request.query_params.get("msg", ""),
-                  err=request.query_params.get("err", ""))
+                  err=request.query_params.get("err", ""),
+                  played=os.path.basename(request.query_params.get("ukazka", "")))
 
 
 @app.post("/keys/add")
@@ -1186,3 +1193,76 @@ def episode_delete(slug: str, stamp: str, request: Request, csrf: str = Form("")
     if not runner.delete_episode(config.load(), slug, stamp):
         return back(err="Takový hotový díl tu není.", where="/dily")
     return back(msg="Díl smazán a feed přestavěn.", where="/dily")
+
+
+# ------------------------------------------------------------ zkouška hlasu
+
+SAMPLE_TEXT = ("Dobré ráno, v přehledu dne: prezident Petr Pavel povede českou delegaci na "
+               "summitu v Tiraně. Sněmovna projedná rozpočet ve čtvrtek třicátého října. "
+               "Řidiči na Zlínsku hlásí namrzlé silnice a zhoršenou viditelnost.")
+
+SAMPLE_DIR = "ukazky"
+
+
+def sample_panel(cfg, token: str, played: str = "") -> str:
+    """Krátká věta namluvená nanečisto — jediný způsob, jak hlas vybrat: uchem.
+
+    Zkoušet přízvuk na celém dílu je drahé a pomalé; tohle je pár vteřin a pár
+    haléřů, takže jde projet všechny hlasy za sebou a porovnat je."""
+    voice = escape((cfg.path("episode.voice") or "").strip())
+    player = ""
+    if played:
+        player = ('<audio controls preload="auto" style="width:100%;margin-top:12px" '
+                  'src="/hlas/ukazka/' + escape(played) + '"></audio>'
+                  '<div class="help">hlas <b>' + escape(played.rsplit(".", 1)[0]) + "</b> · "
+                  "namluveno teď · <a href='/hlas/ukazka/" + escape(played) + "'>stáhnout</a></div>")
+    return ('<div class="panel"><form method="post" action="/hlas/ukazka">'
+            '<input type="hidden" name="csrf" value="' + token + '">'
+            '<p class="help" style="margin-top:0">Namluví krátkou větu s českými jmény, datem '
+            'a hláskami, na kterých se cizí hlas obvykle prozradí (ř, č, ě, dlouhé samohlásky). '
+            'Použije se stejné nastavení jako na díl — jen Hlas si můžeš pro zkoušku přepsat, '
+            'aniž bys ho ukládal.</p>'
+            '<div class="row">'
+            '<div class="field" style="flex:2"><label for="sample_voice">Hlas na zkoušku</label>'
+            '<input id="sample_voice" name="voice" value="' + voice + '" placeholder="nova"></div>'
+            '</div>'
+            '<div class="field"><label for="sample_text">Text</label>'
+            '<textarea id="sample_text" name="text" style="min-height:70px">'
+            + escape(SAMPLE_TEXT) + "</textarea></div>"
+            '<button>Namluvit ukázku</button>' + player + "</form></div>")
+
+
+@app.post("/hlas/ukazka")
+def speak_sample(request: Request, csrf: str = Form(""), voice: str = Form(""),
+                 text: str = Form("")):
+    check_csrf(csrf, require(request))
+    cfg = config.load()
+    text = (text or SAMPLE_TEXT).strip()[:600]          # ukázka, ne díl
+    voice = (voice or "").strip()
+    if voice:
+        episode = dict(cfg.get("episode") or {})
+        episode["voice"] = voice
+        cfg = config.Config({**cfg, "episode": episode})
+    name = (shows.slugify(voice or "vychozi") + "."
+            + str(cfg.path("episode.response_format", "mp3")))
+    dest = os.path.join(runner.work_dir(cfg, SAMPLE_DIR), name)
+    try:
+        speak.synthesize(config.client(cfg), cfg, text, dest)
+    except SystemExit as exc:
+        return back(err="Ukázka nevyšla: " + str(exc), where="/nastaveni")
+    except Exception as exc:
+        return back(err="Ukázka nevyšla: " + exc.__class__.__name__ + ": " + str(exc),
+                    where="/nastaveni")
+    return back(msg="Ukázka hotová, přehraj si ji dole.", where="/nastaveni?ukazka=" + name)
+
+
+@app.get("/hlas/ukazka/{name}")
+def sample_audio(name: str, request: Request):
+    require(request)
+    cfg = config.load()
+    root = os.path.abspath(runner.work_dir(cfg, SAMPLE_DIR))
+    path = os.path.abspath(os.path.join(root, name))
+    if not path.startswith(root + os.sep) or not os.path.isfile(path):
+        raise HTTPException(404, "ukázka není")
+    return FileResponse(path, media_type=feedmod.MIME.get(os.path.splitext(path)[1].lower(),
+                                                          "audio/mpeg"))

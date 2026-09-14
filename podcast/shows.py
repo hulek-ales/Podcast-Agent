@@ -63,7 +63,7 @@ STARTER_FEEDS = [
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
 # cesty administrace — pořad s takovým identifikátorem by je přebil
 RESERVED = {"login", "logout", "keys", "settings", "feed", "media", "healthz", "shows",
-            "run", "static", "api", "docs", "dily", "nastaveni"}
+            "run", "static", "api", "docs", "dily", "nastaveni", "hlas"}
 
 
 def path() -> str:

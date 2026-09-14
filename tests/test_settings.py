@@ -1,6 +1,7 @@
 """Nastavení z administrace: soubor na disku už není potřeba."""
 
 import importlib
+import os
 
 import pytest
 from fastapi.testclient import TestClient
@@ -83,3 +84,53 @@ def test_version_is_visible_after_restart(client):
     from podcast import version
     assert version.info()["rev"]
     assert "verze" in client.get("/nastaveni").text
+
+
+def test_voice_sample_plays_back_in_the_page(client, monkeypatch, tmp_path):
+    """Přízvuk se nevybere z tabulky, ale uchem — a zkoušet ho na celém dílu je drahé."""
+    from podcast import config, settings, speak
+
+    settings.save({"output.work_dir": str(tmp_path / "work"),
+                   "models.tts": "gpt-4o-mini-tts", "models.tts_provider": "openai"})
+    spoken = []
+
+    def fake_synthesize(opx, cfg, text, dest):
+        spoken.append((cfg.path("episode.voice"), text))
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        open(dest, "wb").write(b"ID3fake")
+        return dest
+
+    monkeypatch.setattr(speak, "synthesize", fake_synthesize)
+    monkeypatch.setattr(config, "client", lambda cfg: object())
+
+    r = client.post("/hlas/ukazka", data={"csrf": csrf(client), "voice": "onyx"},
+                    follow_redirects=False)
+    assert "ukazka=onyx.mp3" in r.headers["location"]
+    assert "msg=" in r.headers["location"]          # obojí v jedné adrese, ne dvakrát „?“
+    assert spoken[0][0] == "onyx"                   # hlas ze zkoušky, ne uložený
+    assert "Řidiči" in spoken[0][1]
+
+    page = client.get("/nastaveni?ukazka=onyx.mp3").text
+    assert '<audio controls' in page and "/hlas/ukazka/onyx.mp3" in page
+
+    audio = client.get("/hlas/ukazka/onyx.mp3")
+    assert audio.status_code == 200 and audio.content == b"ID3fake"
+
+
+def test_sample_cannot_reach_outside_its_folder(client, monkeypatch, tmp_path):
+    from podcast import settings
+    settings.save({"output.work_dir": str(tmp_path / "work")})
+    assert client.get("/hlas/ukazka/..%2F..%2Fstate.json").status_code == 404
+
+
+def test_failed_sample_says_why(client, monkeypatch):
+    from podcast import config, speak
+
+    def boom(opx, cfg, text, dest):
+        raise SystemExit("hlas „xxx“ není v proxy")
+
+    monkeypatch.setattr(speak, "synthesize", boom)
+    monkeypatch.setattr(config, "client", lambda cfg: object())
+    r = client.post("/hlas/ukazka", data={"csrf": csrf(client), "voice": "xxx"},
+                    follow_redirects=False)
+    assert "err=" in r.headers["location"] and "ukazka=" not in r.headers["location"]

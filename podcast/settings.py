@@ -27,8 +27,14 @@ DEFAULTS = {
                 "similarity": 0.80, "fulltext": True, "temperature": "",
                 "voice": "", "language": "cs", "response_format": "mp3", "speed": 1.0},
     "tts": {"mode": "job", "priority": 3, "poll_s": 15, "timeout_s": 7200, "max_chars": 3800,
-            "instructions": "Čti plynulou spisovnou češtinou, klidným tónem zpravodajského "
-                            "moderátora. Věty odděluj krátkou pauzou, jména vyslovuj zřetelně."},
+            # Hlasy komerčních API jsou trénované hlavně na angličtině a čeština z nich
+            # leze s přízvukem. Nejvíc pomáhá říct to natvrdo a připomenout přízvuk na
+            # první slabice — tam se cizí hlas prozradí nejdřív.
+            "instructions": "Mluvíš česky jako rodilý mluvčí, bez anglického přízvuku. "
+                            "Čti plynulou spisovnou češtinou, klidným tónem zpravodajského "
+                            "moderátora. Dodržuj délku samohlásek a výslovnost ř, č, š, ž; "
+                            "přízvuk dávej vždy na první slabiku slova. Věty odděluj krátkou "
+                            "pauzou, jména vyslovuj zřetelně."},
     "jobs": {"priority": 7, "poll_s": 10, "timeout_s": 5400},
     "output": {"dir": "/data/public", "work_dir": "/data/work",
                "base_url": "", "keep_episodes": 30},

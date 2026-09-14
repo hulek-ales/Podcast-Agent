@@ -353,6 +353,28 @@ Pozor na pole `language`: lokální GPU služba ho chce, OpenAI ho nezná a na
 neznámé pole vrátí HTTP 400. Agent proto posílá každé straně jen to, čemu rozumí
 — u komerčního API se jazyk říká větou v *Pokynu k přednesu*.
 
+### Doladění přízvuku
+
+Hlasy OpenAI jsou trénované hlavně na angličtině, takže čeština z nich leze
+s náběhem. Úplně to nezmizí, ale posunout se to dá dvěma pákami — a obě se
+zkoušejí uchem, ne úvahou.
+
+Nastavení → **Zkouška hlasu** namluví krátkou větu s českými jmény, datem
+a hláskami, na kterých se cizí hlas prozradí (ř, č, ě, dlouhé samohlásky).
+Trvá to pár vteřin, stojí to pár haléřů a hlas si pro zkoušku přepíšeš, aniž
+bys ho ukládal — takže jde projet všechny hlasy za sebou a porovnat je.
+
+1. **Hlas.** `nova`, `onyx`, `sage`, `coral`, `ash`, `marin`, `cedar` zní na
+   češtině každý jinak. Vyber ten, co ti na ukázce sedí, a teprve pak ho ulož
+   u pořadu.
+2. **Pokyn k přednesu.** Ve výchozím textu je „mluvíš česky jako rodilý mluvčí“
+   a připomínka, že **přízvuk patří na první slabiku** — tam se cizí hlas
+   prozradí nejdřív. Klidně si ho uprav dál; je to obyčejná věta modelu.
+
+Když ti ani jedno nestačí, zbývá lokální model s českými váhami
+(viz [podcast-tts](https://github.com/hulek-ales/podcast-tts)) — tam je přízvuk
+z principu český, jen za cenu stavění image a sdílení karty s Ollamou.
+
 ## Díly a průběh
 
 Záložka **Díly** je deník výroby: jeden řádek na každý den každého pořadu —
