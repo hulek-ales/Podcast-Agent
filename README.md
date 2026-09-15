@@ -525,6 +525,22 @@ celý díl znovu*, a maže: rozdělaná práce, nebo hotový díl i s přestavě
 Stopa se zapisuje po řádcích do `work/<pořad>/<datum>/trace.jsonl`, takže jde
 číst i během běhu a pád procesu nezničí, co už se stihlo.
 
+## Aktualizace tlačítkem
+
+Nastavení → **Verze a aktualizace** ukazuje, co běží, a umí stáhnout novou verzi
+bez chození do TrueNASu. *Zjistit novou verzi* udělá `git fetch` a vypíše, co
+přibylo; *Aktualizovat a restartovat* stáhne kód a ukončí proces — kontejner se
+podle `restart: unless-stopped` nastartuje sám a při startu doinstaluje i
+změněné závislosti, což by pouhé znovunačtení kódu neumělo.
+
+Podmínkou je, že kód běží z gitového klonu, tedy zapnutý self-update: v compose
+vyplň `REPO_URL` (a u soukromého repa `GIT_TOKEN`) a nech připojený svazek na
+`/app/src`. Když appka běží z hotového image, panel to řekne a poradí, jak to
+zapnout — nová verze tam totiž může přijít jen novým image.
+
+Aktualizace se odmítne, když se zrovna vyrábí díl: restart by rozdělanou práci
+zahodil. Token z adresy repozitáře se na stránku nedostane, maskuje se.
+
 ## Která verze běží
 
 Patička každé stránky administrace hlásí commit, čas buildu a čas startu:

@@ -26,7 +26,7 @@ from fastapi.responses import (FileResponse, HTMLResponse, JSONResponse,
 from datetime import datetime
 
 from . import (auth, config, feed as feedmod, keys, runner, script, settings as prefs,
-               shows, speak, state, topic as topicmod, version)
+               shows, speak, state, topic as topicmod, update, version)
 from .opx import OpxClient, OpxError
 
 app = FastAPI(title="Podcast agent", docs_url=None, redoc_url=None, openapi_url=None)
@@ -306,6 +306,9 @@ použije se jednou a zapomene.</p>
 <h2>Zkouška vyhledávače</h2>
 {search}
 
+<h2>Verze a aktualizace</h2>
+{update}
+
 <h2>Heslo do administrace</h2>
 <div class="panel"><form method="post" action="/settings/password">
 <input type="hidden" name="csrf" value="{token}">
@@ -331,7 +334,7 @@ použije se jednou a zapomene.</p>
                 if auth.initial_password() else "",
         saved_url=escape(state.load().get("proxy_url", "")), min_pw=auth.MIN_PASSWORD,
         prefs=settings_form(token), sample=sample_panel(cfg, token, played),
-        search=search_panel(cfg, token),
+        search=search_panel(cfg, token), update=update_panel(token),
         url=escape(url or "—"), url_src=escape(url_src), key_src=escape(key_src),
         masked=escape(keys.mask(key)) if key else "—",
         wanted=escape(", ".join(m for m in wanted if m)))
@@ -1452,3 +1455,83 @@ def search_test(request: Request, csrf: str = Form("")):
                     where="/nastaveni")
     return back(msg="Vyhledávač odpovídá, " + str(len(hits)) + " výsledků: "
                 + ", ".join(h["link"] for h in hits[:3]) + detail, where="/nastaveni")
+
+
+# ------------------------------------------------------- aktualizace kódu
+
+def update_panel(token: str, found: dict = None) -> str:
+    """Co běží, co je na serveru a tlačítko, co to srovná."""
+    info = found if found is not None else update.status()
+    if not info.get("ok"):
+        return ('<div class="panel"><div class="help" style="margin-top:0">'
+                'Appka běží z hotového image (' + escape(info.get("where", "?")) + '), takže '
+                'nová verze přijde jen novým image — aktualizovat odsud nejde.<br><br>'
+                'Když chceš aktualizovat tlačítkem, zapni v compose self-update: vyplň '
+                '<code>REPO_URL</code> (a u soukromého repa <code>GIT_TOKEN</code>) a nech '
+                'připojený svazek na <code>/app/src</code>. Kontejner si pak kód drží '
+                'v Gitu a tenhle panel začne fungovat.</div></div>')
+
+    rows = ['<div class="kv" style="margin-bottom:12px">'
+            "<div>běží</div><div><b>" + escape(info.get("commit", "?")) + "</b> "
+            + escape(info.get("subject", "")) + ' <span class="mute">('
+            + escape(info.get("when", "")) + ")</span></div>"
+            "<div>větev</div><div>" + escape(info.get("branch", "?")) + "</div>"
+            "<div>odkud</div><div class=\"mute\">" + escape(info.get("remote", "?")) + "</div>"]
+    if info.get("dirty"):
+        rows.append('<div>pozor</div><div class="warn">v pracovní kopii jsou místní změny, '
+                    "aktualizace je může shodit</div>")
+    if info.get("error"):
+        rows.append('<div>poslední kontrola</div><div class="bad">'
+                    + escape(info["error"]) + "</div>")
+    rows.append("</div>")
+
+    behind = info.get("behind")
+    if behind:
+        lines = "".join("<div>" + escape(c) + "</div>" for c in info.get("commits", []))
+        rows.append('<div class="flash" style="border-color:var(--warn);color:var(--warn)">'
+                    "K dispozici je novějších commitů: <b>" + str(behind) + "</b></div>"
+                    '<div class="help" style="margin:-8px 0 12px">' + lines + "</div>")
+    elif found is not None:
+        rows.append('<div class="flash good">Nic nového, běží poslední verze.</div>')
+
+    buttons = (_post_button("/update/check", token, "Zjistit novou verzi", {})
+               + " " + _post_button("/update/run", token,
+                                    "Aktualizovat a restartovat", {}, danger=bool(info.get("dirty")),
+                                    confirm="Stáhnout novou verzi a restartovat appku?"))
+    return ('<div class="panel">' + "".join(rows) + buttons
+            + '<div class="help" style="margin-top:10px">Aktualizace stáhne kód a ukončí '
+              "proces; kontejner se podle <code>restart: unless-stopped</code> nastartuje "
+              "sám a při startu doinstaluje i změněné závislosti. Chvíli bude stránka "
+              "nedostupná — pak ji načti znovu a zkontroluj verzi v patičce.</div></div>")
+
+
+@app.post("/update/check")
+def update_check(request: Request, csrf: str = Form("")):
+    session = require(request)
+    check_csrf(csrf, session)
+    info = update.status(fetch=True)
+    if not info.get("ok"):
+        return back(err="Kód neběží z gitového klonu, není co kontrolovat.", where="/nastaveni")
+    if info.get("error"):
+        return back(err="Nepovedlo se zjistit novinky: " + info["error"], where="/nastaveni")
+    if info.get("behind"):
+        return back(msg="K dispozici je novějších commitů: " + str(info["behind"])
+                    + " — nejnovější „" + (info.get("commits") or ["?"])[0] + "“.",
+                    where="/nastaveni")
+    return back(msg="Nic nového, běží poslední verze.", where="/nastaveni")
+
+
+@app.post("/update/run")
+def update_run(request: Request, csrf: str = Form("")):
+    session = require(request)
+    check_csrf(csrf, session)
+    busy = runner.status()["running"]
+    if busy:
+        return back(err="Právě se vyrábí " + busy + " — restart by běh zahodil. "
+                        "Zkus to, až doběhne.", where="/nastaveni")
+    ok, message = update.pull()
+    if not ok:
+        return back(err="Aktualizace selhala: " + message, where="/nastaveni")
+    update.restart()
+    return back(msg=message + " Restartuji — za chvíli načti stránku znovu.",
+                where="/nastaveni")
