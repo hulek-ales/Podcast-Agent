@@ -596,7 +596,9 @@ Když ho přegeneruješ, všechny pořady musíš ve čtečce přidat znovu.</di
   <div class="field"><label for="stories">Témat</label>
     <input id="stories" name="stories" type="number" min="1" max="20" value="{f_stories}"></div>
   <div class="field"><label for="max_age_hours">Stáří článků (h)</label>
-    <input id="max_age_hours" name="max_age_hours" type="number" min="1" max="336" value="{f_age}"></div>
+    <input id="max_age_hours" name="max_age_hours" type="number" min="1" max="336" value="{f_age}">
+    <div class="help">Jen zpravodajský pořad — starší zprávy se do přehledu neberou.
+      U tematického se nepoužije, podklady k tématu se podle data nefiltrují.</div></div>
 </div>
 <div class="row">
   <div class="field"><label for="time">Čas výroby</label>

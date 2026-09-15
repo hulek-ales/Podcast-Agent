@@ -313,3 +313,19 @@ def test_research_queries_are_english_and_specific():
     plan = topicmod.queries(opx, cfg_with(), "Vyhynutí dinosaurů")
     assert plan["research"] == ["Chicxulub impact winter", "K-Pg extinction selectivity"]
     assert "ANGLICKY" in opx.asked[0]
+
+
+def test_topic_run_ignores_article_age(monkeypatch, tmp_path):
+    """Stáří článků filtruje RSS; podklady k tématu by podle data neměly projít vůbec."""
+    from podcast import collect, topic as topicmod
+
+    monkeypatch.setattr(topicmod, "_api", lambda lang, params, **kw: (
+        {"query": {"search": [{"title": "Dinosauři"}]}} if params.get("list") == "search"
+        else {"query": {"pages": [{"title": "Dinosauři", "extract": "Fakta. " * 400}]}}))
+
+    def never(*a, **kw):
+        raise AssertionError("sběr z RSS se u tématu nesmí volat")
+
+    monkeypatch.setattr(collect, "collect", never)
+    arts = topicmod.gather("Dinosauři", langs=("cs",), papers=0)
+    assert arts and all(a.get("published") is None for a in arts)   # datum se ani nesleduje
