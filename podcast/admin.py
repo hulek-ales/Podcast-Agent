@@ -606,15 +606,19 @@ Když ho přegeneruješ, všechny pořady musíš ve čtečce přidat znovu.</di
   <div class="field"><label>Dny</label><div style="display:flex;gap:10px;flex-wrap:wrap;padding-top:4px">{days}</div></div>
 </div>
 <div class="row">
-  <div class="field"><label for="voice">Hlas</label>
+  <div class="field"><label for="voice">Hlas — kdo se ptá</label>
     <input id="voice" name="voice" value="{f_voice}" placeholder="nova">
-    <div class="help">Podle toho, kdo mluví: u OpenAI jméno hlasu (alloy, echo, fable, onyx,
-      nova, shimmer, coral, verse, ballad, ash, sage, marin, cedar), u lokální GPU služby
-      soubor s referenční nahrávkou (jirka.wav).</div></div>
-  <div class="field"><label for="voice_b">Druhý hlas (styl duo)</label>
+    <div class="help">U stylu duo je to mluvčí <b>[A]</b>, který se ptá za posluchače;
+      u ostatních stylů jediný hlas dílu. OpenAI: alloy, echo, fable, onyx, nova, shimmer,
+      coral, verse, ballad, ash, sage, marin, cedar. Lokální GPU služba: soubor
+      s referenční nahrávkou (jirka.wav). Poslechnout si je můžeš
+      v <a href="/nastaveni">Nastavení → Zkouška hlasu</a>.</div></div>
+  <div class="field"><label for="voice_b">Druhý hlas — kdo odpovídá (jen styl duo)</label>
     <input id="voice_b" name="voice_b" value="{f_voice_b}" placeholder="onyx">
-    <div class="help">Kdo se ptá a kdo odpovídá. Prázdné = díl namluví jeden hlas.
-      Jen komerční API; lokální služba dostává celý díl jedním dotazem.</div></div>
+    <div class="help">Mluvčí <b>[B]</b>, který téma vykládá — namluví většinu dílu, tak ať
+      se dobře poslouchá dvacet minut v kuse. Vyber ho tak, aby byl od prvního hlasu
+      <b>slyšitelně jiný</b>; dva podobné hlasy rozhovor spíš zamlží. Prázdné = celý díl
+      jedním hlasem. Funguje jen s komerčním API.</div></div>
   <div class="field"><label for="temperature">Teplota scénáře</label>
     <input id="temperature" name="temperature" value="{f_temperature}" placeholder="neposílat">
     <div class="help">Prázdné = neposílat. Modely řady gpt-5 jinou než výchozí odmítnou.</div></div>
