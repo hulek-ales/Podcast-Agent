@@ -428,3 +428,109 @@ def test_one_voice_when_second_is_not_set(tmp_path):
     speak.synthesize(FakeOpx(), cfg, "Celý díl.", str(tmp_path / "d.mp3"),
                      turns=[("A", "Ptám se."), ("B", "Odpovídám.")])
     assert used == ["nova"]          # bez druhého hlasu se nic nedělí
+
+
+def wav_bytes(seconds=0.1, rate=8000, value=b"\x01\x00"):
+    import io
+    import wave
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(value * int(rate * seconds))
+    return buf.getvalue()
+
+
+def test_wav_parts_are_really_joined():
+    """Slepit WAV po bajtech nejde — v hlavičce je délka, takže by se přehrál
+    jen první kus. U MP3 to naopak stačí."""
+    import io
+    import wave
+
+    from podcast import speak
+
+    parts = [wav_bytes(0.1), wav_bytes(0.2), wav_bytes(0.3)]
+    joined = speak.join_audio(parts)
+    with wave.open(io.BytesIO(joined), "rb") as w:
+        assert w.getnframes() == int(8000 * 0.6)          # všechny tři, ne jen první
+        assert w.getframerate() == 8000 and w.getnchannels() == 1
+    assert len(joined) < sum(len(p) for p in parts)       # jedna hlavička místo tří
+
+    mp3 = [b"ID3aaa", b"ID3bbb"]
+    assert speak.join_audio(mp3) == b"ID3aaaID3bbb"
+    assert speak.join_audio([]) == b""
+
+
+def test_mismatched_wavs_do_not_explode():
+    from podcast import speak
+    out = speak.join_audio([wav_bytes(0.1, rate=8000), wav_bytes(0.1, rate=44100)])
+    assert out                                            # nespadne, slepí natvrdo
+
+
+def test_local_dialogue_goes_out_as_one_batch(tmp_path):
+    """Sada replik v jedné dávce: pracovník fronty je k modelu lepivý, takže
+    je vezme za sebou a karta se uprostřed dílu nepřehodí."""
+    from podcast import speak
+    from podcast.config import Config
+
+    sent = {}
+
+    class FakeOpx:
+        def models(self):
+            return {"tts": {"ok": True, "kind": "gpu", "models": ["tts-cs"]}}
+
+        def submit_batch(self, jobs, priority=None, **kw):
+            sent["jobs"] = jobs
+            sent["priority"] = priority
+            return "b7"
+
+        def wait_batch(self, batch, poll=5.0, timeout=None):
+            return [{"id": i, "status": "done"} for i, _ in enumerate(sent["jobs"], 1)]
+
+        def download(self, job_id, dest):
+            open(dest, "wb").write(wav_bytes(0.1))
+            return "audio/wav"
+
+    cfg = Config({"models": {"tts": "tts-cs", "tts_provider": ""},
+                  "episode": {"voice": "kuba.wav", "voice_b": "david.wav", "language": "cs"},
+                  "tts": {"mode": "job", "priority": 3}})
+    turns = [("A", "Ptám se."), ("B", "Odpovídám."), ("A", "Aha.")]
+    dest = str(tmp_path / "dil.wav")
+    speak.synthesize(FakeOpx(), cfg, "vše", dest, turns=turns)
+
+    assert len(sent["jobs"]) == 3 and sent["priority"] == 3
+    assert [j["body"]["voice"] for j in sent["jobs"]] == ["kuba.wav", "david.wav", "kuba.wav"]
+    assert all(j["path"] == "/v1/audio/speech" for j in sent["jobs"])
+    assert all(j["body"]["language"] == "cs" for j in sent["jobs"])   # lokální službě jazyk jde
+
+    import io
+    import wave
+    with wave.open(io.BytesIO(open(dest, "rb").read()), "rb") as w:
+        assert w.getnframes() == int(8000 * 0.3)          # tři repliky slepené správně
+
+
+def test_failed_turn_in_a_batch_is_reported(tmp_path):
+    import pytest
+
+    from podcast import speak
+    from podcast.config import Config
+
+    class FakeOpx:
+        def models(self):
+            return {"tts": {"ok": True, "kind": "gpu", "models": ["tts-cs"]}}
+
+        def submit_batch(self, jobs, priority=None, **kw):
+            return "b1"
+
+        def wait_batch(self, batch, poll=5.0, timeout=None):
+            return [{"id": 1, "status": "done"}, {"id": 2, "status": "error", "error": "OOM"}]
+
+        def download(self, job_id, dest):
+            open(dest, "wb").write(b"RIFFxx")
+
+    cfg = Config({"models": {"tts": "tts-cs", "tts_provider": ""},
+                  "episode": {"voice": "a.wav", "voice_b": "b.wav"}, "tts": {"mode": "job"}})
+    with pytest.raises(SystemExit, match="replika 2"):
+        speak.synthesize(FakeOpx(), cfg, "vše", str(tmp_path / "d.wav"),
+                         turns=[("A", "x"), ("B", "y")])

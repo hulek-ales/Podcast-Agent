@@ -500,10 +500,16 @@ podle nich text rozdělí a každou repliku namluví jiným hlasem. Nastavíš t
 u pořadu — *Hlas* a *Druhý hlas* (třeba `nova` a `onyx`). Když druhý hlas
 necháš prázdný, namluví se díl jedním, jak dosud.
 
-Funguje to s komerčním TTS, které se na hlas ptá u každého dotazu. Lokální GPU
-služba má pravidlo „jeden díl = jeden dotaz“ (jinak by proxy přehazovala kartu
-mezi replikami), takže tam se rozhovor namluví jedním hlasem a agent to napíše
-do průběhu.
+Funguje to s komerčním TTS i s lokální GPU službou. U té se repliky pošlou
+**jako jedna dávka úloh**, ne po jedné: pravidlo „jeden díl = jeden dotaz“ je
+totiž o tom, aby se uprostřed dílu nepřehodila karta, a to dávka splní —
+pracovník fronty v proxy je k modelu lepivý, takže úlohy pro hlas, který kartu
+drží, bere za sebou bez přepínání. Navíc se mezi replikami může protáhnout
+člověk v chatu, což jeden dlouhý dotaz neumožní.
+
+Kusy se slepují podle formátu: MP3 stačí spojit po bajtech, u WAV se rozeberou
+rámce a složí nová hlavička — jinak by se přehrála jen první replika, protože
+délka je v hlavičce.
 
 ## Díly a průběh
 
