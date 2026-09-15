@@ -36,8 +36,8 @@ def show_config(cfg, show: dict):
     merged = config.Config({k: dict(v) if isinstance(v, dict) else v for k, v in cfg.items()})
     episode = dict(merged.get("episode") or {})
     for key in ("style", "minutes", "stories", "max_age_hours", "similarity", "fulltext",
-                "temperature", "voice", "language", "response_format", "prompt_extra",
-                "topic"):
+                "temperature", "voice", "voice_b", "language", "response_format",
+                "prompt_extra", "topic"):
         episode[key] = show.get(key, episode.get(key))
     merged["episode"] = episode
     merged["feeds"] = show["feeds"]
@@ -175,7 +175,8 @@ def _produce(show: dict, day: datetime, steps, resume: bool) -> dict:
         if not (resume and os.path.isfile(audio)):
             trace.step("hlas", str(cfg.path("models.tts")) + ", "
                        + str(len(script.spoken_text(episode))) + " znaků")
-            speak.synthesize(opx, cfg, script.spoken_text(episode), audio)
+            speak.synthesize(opx, cfg, script.spoken_text(episode), audio,
+                             turns=script.spoken_turns(episode))
         feedmod.save_episode(out_dir, stamp, episode, audio, script.as_markdown(episode))
         token = state.feed_token()
         feedmod.build_feed(out_dir, cfg, token)

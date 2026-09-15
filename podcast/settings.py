@@ -25,7 +25,8 @@ DEFAULTS = {
                "tts": "tts-cs", "tts_provider": ""},
     "episode": {"style": "anchor", "minutes": 9, "stories": 7, "max_age_hours": 24,
                 "similarity": 0.80, "fulltext": True, "temperature": "",
-                "voice": "", "language": "cs", "response_format": "mp3", "speed": 1.0},
+                "voice": "", "voice_b": "", "language": "cs",
+                "response_format": "mp3", "speed": 1.0},
     "tts": {"mode": "job", "priority": 3, "poll_s": 15, "timeout_s": 7200, "max_chars": 3800,
             # Hlasy komerčních API jsou trénované hlavně na angličtině a čeština z nich
             # leze s přízvukem. Nejvíc pomáhá říct to natvrdo a připomenout přízvuk na

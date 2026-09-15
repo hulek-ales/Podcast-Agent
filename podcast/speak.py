@@ -114,17 +114,53 @@ def check_voice(opx, model: str, provider: str):
           "hlasu — třeba gpt-4o-mini-tts a openai.")
 
 
-def synthesize(opx, cfg, text: str, dest: str) -> str:
-    """Napíše zvuk do `dest`. Vrátí cestu k souboru."""
+def synthesize(opx, cfg, text: str, dest: str, turns: list = None) -> str:
+    """Napíše zvuk do `dest`. Vrátí cestu k souboru.
+
+    `turns` = [("A", text), ("B", text), …] pro rozhovor dvou hlasů. Jde to jen
+    u komerčního API, které se na hlas ptá u každého dotazu; lokální GPU služba
+    má pravidlo „jeden díl = jeden dotaz“ (jinak by se karta přehazovala), takže
+    tam se rozhovor namluví jedním hlasem a řekne se to do logu."""
     model = cfg.need("models.tts")
     provider = (cfg.path("models.tts_provider") or "").strip()
     check_voice(opx, model, provider)
     extra = voice_options(cfg, provider)
     os.makedirs(os.path.dirname(dest) or ".", exist_ok=True)
 
+    second = (cfg.path("episode.voice_b") or "").strip()
+    two_voices = bool(turns and second and provider
+                      and len({who for who, _ in turns}) > 1)
+    if two_voices:
+        return _dialogue(opx, cfg, turns, dest, model, provider, extra, second)
+    if turns and second and not provider:
+        print("[hlas] rozhovor dvou hlasů umí jen komerční API, "
+              "lokální služba namluví díl jedním hlasem", flush=True)
     if provider:
         return _commercial(opx, cfg, text, dest, model, provider, extra)
     return _gpu_service(opx, cfg, text, dest, model, extra)
+
+
+def _dialogue(opx, cfg, turns: list, dest: str, model: str, provider: str, extra: dict,
+              second: str) -> str:
+    """Rozhovor: každá replika svým hlasem, kusy se slepí do jednoho souboru."""
+    first = extra.get("voice", DEFAULT_VOICE)
+    print("[hlas] rozhovor, " + str(len(turns)) + " replik, hlasy " + first + " a " + second,
+          flush=True)
+    parts = []
+    for i, (who, text) in enumerate(turns, 1):
+        options = {**extra, "voice": first if who == "A" else second}
+        piece = dest + ".turn"
+        _commercial(opx, cfg, text, piece, model, provider, options, quiet=True)
+        with open(piece, "rb") as f:
+            parts.append(f.read())
+        os.remove(piece)
+        print("[hlas]   replika " + str(i) + "/" + str(len(turns)) + " (" + who + ") hotova",
+              flush=True)
+    with open(dest, "wb") as f:
+        for part in parts:
+            f.write(part)
+    print("[hlas] hotovo, " + str(os.path.getsize(dest) // 1024) + " kB → " + dest, flush=True)
+    return dest
 
 
 def _gpu_service(opx, cfg, text: str, dest: str, model: str, extra: dict) -> str:
@@ -148,15 +184,17 @@ def _gpu_service(opx, cfg, text: str, dest: str, model: str, extra: dict) -> str
     return dest
 
 
-def _commercial(opx, cfg, text: str, dest: str, model: str, provider: str, extra: dict) -> str:
+def _commercial(opx, cfg, text: str, dest: str, model: str, provider: str, extra: dict,
+                quiet: bool = False) -> str:
     """Komerční API: dělí se tady, protože má strop na délku vstupu.
 
     Kusy se slepí prostým spojením bajtů. U MP3 to přehrávače zvládají; jediné,
     co se tím může rozjet, je zobrazená délka stopy."""
     limit = int(cfg.path("tts.max_chars", DEFAULT_MAX_CHARS))
     chunks = split_text(text, limit)
-    print("[hlas] " + provider + "/" + model + ", " + str(len(text)) + " znaků v "
-          + str(len(chunks)) + " kusech…", flush=True)
+    if not quiet:
+        print("[hlas] " + provider + "/" + model + ", " + str(len(text)) + " znaků v "
+              + str(len(chunks)) + " kusech…", flush=True)
     parts = []
     for i, chunk in enumerate(chunks, 1):
         if cfg.path("tts.mode", "job") == "direct":
@@ -174,9 +212,11 @@ def _commercial(opx, cfg, text: str, dest: str, model: str, provider: str, extra
             with open(tmp, "rb") as f:
                 parts.append(f.read())
             os.remove(tmp)
-        print("[hlas]   kus " + str(i) + "/" + str(len(chunks)) + " hotov", flush=True)
+        if not quiet:
+            print("[hlas]   kus " + str(i) + "/" + str(len(chunks)) + " hotov", flush=True)
     with open(dest, "wb") as f:
         for part in parts:
             f.write(part)
-    print("[hlas] hotovo, " + str(os.path.getsize(dest) // 1024) + " kB → " + dest, flush=True)
+    if not quiet:
+        print("[hlas] hotovo, " + str(os.path.getsize(dest) // 1024) + " kB → " + dest, flush=True)
     return dest

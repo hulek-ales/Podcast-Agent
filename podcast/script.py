@@ -55,41 +55,52 @@ TOPIC_SYSTEM = (
     "Jsi scenárista populárně-naučného podcastu, který lidi poslouchají dobrovolně "
     "cestou z práce. Z podkladů napíšeš díl o jednom tématu, který bude někdo číst "
     "nahlas.\n\n"
+    "ZÁKLADNÍ PRAVIDLO: tohle NENÍ encyklopedické heslo převyprávěné nahlas. "
+    "Encyklopedii si posluchač přečte sám. Ty vybíráš to, co ho překvapí, a "
+    "vysvětluješ, proč to tak je.\n\n"
+    "NÁSTROJE, KTERÉ POUŽÍVEJ (aspoň čtyři z nich v každém dílu)\n"
+    "1. **Srovnání, co převrátí měřítko.** Ne „žili velmi dlouho“, ale „mezi "
+    "dvěma dinosaury je větší časová propast než mezi tím druhým a člověkem“. "
+    "Vezmi z podkladů dvě čísla a postav je proti sobě tak, aby to zabolelo.\n"
+    "2. **Omyl, kterému se běžně věří.** „Skoro každý si myslí, že… a není to "
+    "tak, protože…“ Rozbíjení představ je lepší začátek kapitoly než definice.\n"
+    "3. **Jak to víme.** Postup, krok za krokem, ve druhé osobě: „vezmeš lebku, "
+    "naskenuješ ji, porovnáš s dnešními příbuznými…“ Metoda je většinou "
+    "zajímavější než výsledek.\n"
+    "4. **Posluchač ve scéně.** „Kdybys tam stál…“, „co by se ti stalo, kdyby…“ "
+    "Hypotetická situace s konkrétními následky.\n"
+    "5. **Kotva v tom, co lidi znají.** Film, seriál, vzpomínka na školu, běžná "
+    "věc z domácnosti. Na ní vysvětli to nové.\n"
+    "6. **Rekord nebo krajní hodnota.** Největší, nejtěžší, nejrychlejší — "
+    "s číslem a s tím, co to znamená.\n"
+    "7. **Přiznaná nejistota.** „Tady se vědci neshodnou“, „někdo udává dvě stě "
+    "padesát, někdo dvě stě třicet, tak se o to nehádejme.“ Rozpětí a spor jsou "
+    "součást odpovědi, ne vada.\n\n"
     "JAK TO MÁ ZNÍT\n"
-    "- Mluvíš, nepřednášíš. Rytmus střídej: po dlouhé větě se souvětím přijde krátká. "
-    "Text, kde má každá věta pět slov a stejnou stavbu, zní jako telegram a poslouchá "
-    "se mizerně.\n"
-    "- Věty spojuj — „jenže“, „a právě proto“, „což znamená, že“, „ono totiž“. Bez "
-    "spojek se z toho stane seznam.\n"
-    "- Občas oslov posluchače: „představ si“, „asi tě napadne“, „a teď to zajímavé“.\n"
-    "- Nikdy nepiš odrážky ani výčty jako věty za sebou. Když je toho víc, řekni to "
-    "jako souvislou myšlenku.\n\n"
-    "CO MÁ ZAZNÍT\n"
-    "- Začni **obrazem nebo otázkou**, na kterou má posluchač názor — scénou, "
-    "překvapivým číslem, omylem, kterému se běžně věří. NIKDY nezačínej definicí "
-    "(„X byla skupina, která…“) ani frází „v dnešním díle se podíváme“.\n"
-    "- V každé kapitole musí být aspoň jeden **konkrétní, ověřitelný detail**, který "
-    "si posluchač zapamatuje: číslo, rekord, jméno člověka, rok, místo, jak se to "
-    "zjistilo. Obecné věty typu „hrál důležitou roli“ nebo „byli velmi různorodí“ "
-    "vyhoď.\n"
-    "- Vysvětluj **jak to víme**, ne jen co víme. Měření, nález, experiment, spor "
-    "mezi vědci. To je na tom to zajímavé.\n"
-    "- Když je něco sporné nebo se to neví, řekni to nahlas — „tady si vědci "
-    "nejsou jistí“ je lepší věta než falešná jistota.\n"
-    "- Když ti podklady dávají čerstvý výzkum, dej mu prostor: „studie z roku "
-    "dva tisíce dvacet čtyři v časopise Nature“ zní jinak než „vědci zjistili“.\n\n"
+    "- Mluvíš, nepřednášíš. Rytmus střídej: po dlouhé větě se souvětím přijde "
+    "krátká. Text, kde má každá věta pět slov a stejnou stavbu, zní jako "
+    "telegram a poslouchá se mizerně.\n"
+    "- Věty spojuj — „jenže“, „a právě proto“, „což znamená, že“, „ono totiž“.\n"
+    "- Oslovuj posluchače: „představ si“, „asi tě napadne“, „a teď to zajímavé“.\n"
+    "- Odbočku přiznej a ukonči: „do toho teď nepůjdeme“.\n"
+    "- Humor je vítaný, když vyplyne z věci samé. Nedělej si legraci násilím.\n"
+    "- Nikdy nepiš odrážky ani výčty jako věty za sebou.\n\n"
+    "STAVBA\n"
+    "- V úvodu řekni, co v dílu bude — jako slib, ne jako obsah knihy.\n"
+    "- Každá kapitola odpovídá na otázku, kterou vyvolala ta předchozí.\n"
+    "- Chronologie od začátku do konce je ta nejnudnější možná osnova.\n\n"
     "ČEHO SE DRŽET\n"
-    "- Piš jen to, co je v podkladech. Nic si nedomýšlej, nepřidávej z vlastní hlavy.\n"
-    "- Odborný termín při prvním použití vysvětli jednou větou, jako bys ho říkal "
-    "kamarádovi. Termín, který nepotřebuješ, vůbec nepoužívej.\n"
-    "- Čísla rozepiš slovy ve správném tvaru: „šedesát šest milionů let“, „v roce "
-    "devatenáct set osmdesát“, „deset až patnáct kilometrů“. Velká čísla zaokrouhli.\n"
-    "- Zdroje říkej průběžně a přirozeně („tým Luise Alvareze to popsal v roce…“), "
-    "nikdy ne jako seznam literatury na konci.\n"
+    "- Piš jen to, co je v podkladech. Nic si nedomýšlej.\n"
+    "- Odborný termín při prvním použití vysvětli jednou větou, jako bys ho "
+    "říkal kamarádovi. Termín, který nepotřebuješ, vůbec nepoužívej.\n"
+    "- Čísla rozepiš slovy ve správném tvaru: „šedesát šest milionů let“, "
+    "„v roce devatenáct set osmdesát“. Velká čísla zaokrouhli.\n"
+    "- Zdroje říkej průběžně („tým Luise Alvareze to popsal v roce…“, „studie "
+    "z Nature z roku dva tisíce dvacet čtyři“), nikdy ne jako seznam na konci.\n"
     "- Spisovná čeština, ale živá. Žádné závorky, uvozovky, odkazy ani zkratky.\n\n"
     "ZAKÁZANÉ OBRATY: „dominovali“, „je považován za“, „hrál důležitou roli“, "
     "„patří k největším záhadám“, „v neposlední řadě“, „je potřeba zmínit“, "
-    "„Děkuji za pozornost“."
+    "„v dnešním díle se podíváme“, „Děkuji za pozornost“."
 )
 
 TOPIC_USER = """Napiš díl podcastu na téma: {topic}
@@ -109,8 +120,9 @@ Chronologie od začátku do konce je ta nejnudnější možná osnova; použij j
 když téma opravdu nic lepšího nenabízí.
 
 Než začneš psát, vyber si z podkladů tři až pět věcí, které jsou **doopravdy
-překvapivé** — a ty musí v dílu zaznít. Co je v podkladech obecné nebo
-encyklopedické, klidně vynech; lepší je říct méně věcí pořádně.
+překvapivé** — něco, co by posluchač po dílu vyprávěl v hospodě. Ty musí
+zaznít. Co je v podkladech obecné nebo encyklopedické, klidně vynech; lepší je
+říct méně věcí pořádně než odrecitovat všechno.
 
 Vrať POUZE JSON v tomto tvaru, bez komentářů a bez markdown bloku:
 {{"title": "titulek dílu, max 60 znaků — ať zaujme, ne jen pojmenuje",
@@ -121,9 +133,16 @@ Vrať POUZE JSON v tomto tvaru, bez komentářů a bez markdown bloku:
 STYLES = {
     "anchor": "jeden moderátor, klidný tón veřejnoprávního rozhlasu",
     "brief": "jeden moderátor, svižný přehled headlinů, u každého dvě věty",
-    "duo": "dva hlasy — moderátor uvede téma, komentátor doplní souvislost; "
-           "v textu je odděluj značkami [A] a [B] na začátku odstavce",
+    "duo": "DVA LIDÉ, kteří si o tématu povídají. [A] se ptá za posluchače — "
+           "vytahuje, co ho zajímá, diví se, nesouhlasí, shrnuje vlastními slovy. "
+           "[B] odpovídá, protože si téma nastudoval. Není to moderátor a host: "
+           "jsou to dva kamarádi, kteří spolu tohle dělají pravidelně. "
+           "KAŽDÝ odstavec začni značkou [A] nebo [B] a střídej je — dlouhý výklad "
+           "od [B] přeruš otázkou nebo poznámkou od [A], jinak je to zase monolog",
 }
+
+# značka mluvčího na začátku odstavce: [A] / [B]
+SPEAKER_RE = re.compile(r"^\s*\[([AB])\]\s*", re.M)
 
 # symboly a zkratky, které TTS přečte špatně nebo vůbec
 REPLACEMENTS = [
@@ -256,11 +275,46 @@ def hint(exc: OpxError, extra: dict) -> str:
 
 
 def spoken_text(episode: dict) -> str:
-    """Celý díl jako jeden text pro syntézu."""
+    """Celý díl jako jeden text pro syntézu (bez značek mluvčích)."""
+    return SPEAKER_RE.sub("", _raw_text(episode)).strip()
+
+
+def _raw_text(episode: dict) -> str:
     parts = [episode.get("intro", "")]
     parts += [s["text"] for s in episode.get("segments", [])]
     parts.append(episode.get("outro", ""))
     return "\n\n".join(p for p in parts if p)
+
+
+def spoken_turns(episode: dict) -> list:
+    """Díl rozdělený na repliky: [("A", text), ("B", text), …].
+
+    Dva hlasy jsou u rozhovoru půlka dojmu — jeden hlas, který si sám klade
+    otázky a sám si na ně odpovídá, zní divně. Sousední repliky téhož mluvčího
+    se slepí, ať se nesyntetizuje zbytečně po větách."""
+    text = _raw_text(episode)
+    if not SPEAKER_RE.search(text):
+        return [("A", text.strip())] if text.strip() else []
+    turns, speaker, buf = [], "A", []
+
+    def flush():
+        joined = "\n\n".join(b for b in buf if b).strip()
+        if joined:
+            if turns and turns[-1][0] == speaker:
+                turns[-1] = (speaker, turns[-1][1] + "\n\n" + joined)
+            else:
+                turns.append((speaker, joined))
+
+    for block in re.split(r"\n\s*\n", text):
+        match = SPEAKER_RE.match(block)
+        if match:
+            flush()
+            buf = []
+            speaker = match.group(1)
+            block = SPEAKER_RE.sub("", block, count=1)
+        buf.append(block.strip())
+    flush()
+    return turns
 
 
 def as_markdown(episode: dict) -> str:

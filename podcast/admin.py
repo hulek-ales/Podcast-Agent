@@ -609,6 +609,10 @@ Když ho přegeneruješ, všechny pořady musíš ve čtečce přidat znovu.</di
     <div class="help">Podle toho, kdo mluví: u OpenAI jméno hlasu (alloy, echo, fable, onyx,
       nova, shimmer, coral, verse, ballad, ash, sage, marin, cedar), u lokální GPU služby
       soubor s referenční nahrávkou (jirka.wav).</div></div>
+  <div class="field"><label for="voice_b">Druhý hlas (styl duo)</label>
+    <input id="voice_b" name="voice_b" value="{f_voice_b}" placeholder="onyx">
+    <div class="help">Kdo se ptá a kdo odpovídá. Prázdné = díl namluví jeden hlas.
+      Jen komerční API; lokální služba dostává celý díl jedním dotazem.</div></div>
   <div class="field"><label for="temperature">Teplota scénáře</label>
     <input id="temperature" name="temperature" value="{f_temperature}" placeholder="neposílat">
     <div class="help">Prázdné = neposílat. Modely řady gpt-5 jinou než výchozí odmítnou.</div></div>
@@ -709,6 +713,7 @@ def shows_page(cfg, session: str, msg="", err="", edit: str = "") -> str:
         f_feeds=escape(shows.feeds_text(form if show or form.get("feeds")
                                         else {"feeds": shows.STARTER_FEEDS})),
         f_topic=escape(str(form.get("topic", "") or "")),
+        f_voice_b=escape(str(form.get("voice_b", "") or "")),
         f_links=escape(shows.links_text(form)),
         kinds="".join('<option value="' + k + '"' + (" selected" if form.get("kind", "zpravy") == k
                                                      else "") + ">" + label + "</option>"
@@ -761,6 +766,7 @@ async def shows_save(request: Request):
         "time": (form.get("time") or "03:10").strip(),
         "days": [int(d) for d in form.getlist("days") if str(d).isdigit()],
         "voice": (form.get("voice") or "").strip(),
+        "voice_b": (form.get("voice_b") or "").strip(),
         "temperature": (form.get("temperature") or "").strip(),
         "keep_episodes": _int(form.get("keep_episodes"), 30),
         "enabled": bool(form.get("enabled")),

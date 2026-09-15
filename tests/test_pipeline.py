@@ -357,3 +357,74 @@ def test_silent_proxy_does_not_block_synthesis(tmp_path):
     cfg = Config({"models": {"tts": "cokoliv", "tts_provider": ""}, "tts": {"mode": "direct"}})
     speak.synthesize(opx, cfg, "Text.", str(tmp_path / "a.mp3"))
     assert opx.spoke == 1
+
+
+def test_dialogue_is_split_into_turns():
+    """Dva hlasy jsou u rozhovoru půlka dojmu — jeden hlas, který si sám klade
+    otázky a sám si odpovídá, zní divně."""
+    from podcast import script
+
+    episode = {"intro": "[A] Dneska dinosauři.\n\n[B] Konečně.",
+               "segments": [{"title": "Peří", "text":
+                             "[B] Dlouho jsme mysleli, že byli šupinatí.\n\n"
+                             "[A] A nebyli?\n\n"
+                             "[B] Nebyli. Fosilie ukázaly otisky peří."}],
+               "outro": "[A] Tak zas příště."}
+    turns = script.spoken_turns(episode)
+    assert [who for who, _ in turns] == ["A", "B", "A", "B", "A"]
+    assert "Konečně" in turns[1][1] and "šupinatí" in turns[1][1]   # slepené sousední repliky
+    assert "[A]" not in script.spoken_text(episode)                 # značky se nečtou nahlas
+
+
+def test_text_without_markers_is_one_turn():
+    from podcast import script
+
+    episode = {"intro": "Dobrý den.", "segments": [{"title": "T", "text": "Fakta."}],
+               "outro": "Na shledanou."}
+    turns = script.spoken_turns(episode)
+    assert len(turns) == 1 and turns[0][0] == "A"
+    assert turns[0][1] == script.spoken_text(episode)
+
+
+def test_two_voices_are_used_for_a_dialogue(tmp_path):
+    from podcast import speak
+    from podcast.config import Config
+
+    used = []
+
+    class FakeOpx:
+        def models(self):
+            return {"openai": {"ok": True, "kind": "openai", "models": ["gpt-4o-mini-tts"]}}
+
+        def speak(self, model, text, provider="", **extra):
+            used.append((extra["voice"], text[:20]))
+            return b"MP3"
+
+    cfg = Config({"models": {"tts": "gpt-4o-mini-tts", "tts_provider": "openai"},
+                  "episode": {"voice": "nova", "voice_b": "onyx"},
+                  "tts": {"mode": "direct"}})
+    turns = [("A", "Ptám se."), ("B", "Odpovídám."), ("A", "Aha.")]
+    speak.synthesize(FakeOpx(), cfg, "Ptám se. Odpovídám. Aha.", str(tmp_path / "d.mp3"),
+                     turns=turns)
+    assert [v for v, _ in used] == ["nova", "onyx", "nova"]
+
+
+def test_one_voice_when_second_is_not_set(tmp_path):
+    from podcast import speak
+    from podcast.config import Config
+
+    used = []
+
+    class FakeOpx:
+        def models(self):
+            return {"openai": {"ok": True, "kind": "openai", "models": ["gpt-4o-mini-tts"]}}
+
+        def speak(self, model, text, provider="", **extra):
+            used.append(extra["voice"])
+            return b"MP3"
+
+    cfg = Config({"models": {"tts": "gpt-4o-mini-tts", "tts_provider": "openai"},
+                  "episode": {"voice": "nova", "voice_b": ""}, "tts": {"mode": "direct"}})
+    speak.synthesize(FakeOpx(), cfg, "Celý díl.", str(tmp_path / "d.mp3"),
+                     turns=[("A", "Ptám se."), ("B", "Odpovídám.")])
+    assert used == ["nova"]          # bez druhého hlasu se nic nedělí

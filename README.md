@@ -488,6 +488,23 @@ přečteš si ho a pustíš *namluvit*. Pak přepíšeš téma a uděláš dalš
 zůstávají v jednom feedu, takže v telefonu je to jeden podcast, ke kterému
 přibývají díly, kdykoli tě něco napadne.
 
+### Forma: rozhovor dvou hlasů
+
+Dobré populárně-naučné podcasty většinou nejsou přednáška, ale **rozhovor**.
+Jeden se ptá za posluchače — diví se, nesouhlasí, shrnuje vlastními slovy —
+a druhý odpovídá, protože si to nastudoval. Monolog o tomtéž zní jako výklad
+u tabule, i když má stejný obsah.
+
+Styl **duo** to umí doopravdy: scénárista značí repliky `[A]` a `[B]`, agent
+podle nich text rozdělí a každou repliku namluví jiným hlasem. Nastavíš to
+u pořadu — *Hlas* a *Druhý hlas* (třeba `nova` a `onyx`). Když druhý hlas
+necháš prázdný, namluví se díl jedním, jak dosud.
+
+Funguje to s komerčním TTS, které se na hlas ptá u každého dotazu. Lokální GPU
+služba má pravidlo „jeden díl = jeden dotaz“ (jinak by proxy přehazovala kartu
+mezi replikami), takže tam se rozhovor namluví jedním hlasem a agent to napíše
+do průběhu.
+
 ## Díly a průběh
 
 Záložka **Díly** je deník výroby: jeden řádek na každý den každého pořadu —

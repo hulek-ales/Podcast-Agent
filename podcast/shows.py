@@ -45,6 +45,7 @@ DEFAULTS = {
     "fulltext": True,
     "temperature": "",
     "voice": "",
+    "voice_b": "",               # druhý hlas u stylu duo
     "language": "cs",
     "response_format": "mp3",
     "keep_episodes": 30,
