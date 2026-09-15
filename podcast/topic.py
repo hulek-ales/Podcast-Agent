@@ -104,13 +104,16 @@ Navrhni, co hledat, aby se k tématu našly použitelné podklady:
 - "wiki": 2 až 4 názvy hesel na Wikipedii (přesné pojmy, ne otázky), česky;
   když je téma spíš zahraniční, přidej i anglický název hesla
 - "web": 2 až 4 vyhledávací dotazy pro běžný vyhledávač
+- "research": 2 až 3 dotazy ANGLICKY do katalogu odborných studií — odborné
+  termíny, ne otázky. Miř na to, co je na tématu sporné, nové nebo překvapivé,
+  ne na základní přehled.
 
-Vrať POUZE JSON: {{"wiki": ["…"], "web": ["…"]}}"""
+Vrať POUZE JSON: {{"wiki": ["…"], "web": ["…"], "research": ["…"]}}"""
 
 
 def queries(opx, cfg, topic: str) -> dict:
     """Z tématu udělá dotazy. Když se to nepovede, hledá se doslova zadané téma."""
-    fallback = {"wiki": [topic], "web": [topic]}
+    fallback = {"wiki": [topic], "web": [topic], "research": [topic]}
     provider = cfg.path("models.script_provider")
     model = cfg.path("models.script")
     if not (opx and provider and model):
@@ -127,11 +130,11 @@ def queries(opx, cfg, topic: str) -> dict:
               flush=True)
         return fallback
     out = {}
-    for key in ("wiki", "web"):
+    for key in ("wiki", "web", "research"):
         values = [str(q).strip() for q in (data.get(key) or []) if str(q).strip()]
         out[key] = values[:4] or [topic]
     print("[téma] hledám — hesla: " + ", ".join(out["wiki"]) + " · web: "
-          + ", ".join(out["web"]), flush=True)
+          + ", ".join(out["web"]) + " · studie: " + ", ".join(out["research"]), flush=True)
     return out
 
 
@@ -186,11 +189,13 @@ def web_search(base_url: str, query: str, limit: int = 4, lang: str = "cs",
 
 
 def gather(topic: str, urls: list = None, langs=("cs", "en"), per_lang: int = 3,
-           opx=None, cfg=None, search_url: str = "", per_query: int = 3) -> list:
-    """Podklady k tématu: vlastní odkazy + Wikipedie + volitelně web. Duplicity pryč."""
+           opx=None, cfg=None, search_url: str = "", per_query: int = 3,
+           papers: int = 4) -> list:
+    """Podklady k tématu: vlastní odkazy + Wikipedie + studie + volitelně web."""
     from .collect import fetch_fulltext
 
-    plan = queries(opx, cfg, topic) if opx is not None else {"wiki": [topic], "web": [topic]}
+    plan = (queries(opx, cfg, topic) if opx is not None
+            else {"wiki": [topic], "web": [topic], "research": [topic]})
     articles = []
     for url in urls or []:
         url = (url or "").strip()
@@ -229,6 +234,14 @@ def gather(topic: str, urls: list = None, langs=("cs", "en"), per_lang: int = 3,
         if found:
             fetch_fulltext(found, max_chars=20000)
             articles.extend(a for a in found if (a.get("text") or "").strip())
+
+    if papers:
+        from . import research
+        found = research.papers(plan["research"], limit=papers)
+        source = research.as_source(found)
+        if source:
+            articles.append(source)
+            print("[téma] studií: " + str(len(found)), flush=True)
 
     seen, unique = set(), []
     for art in articles:

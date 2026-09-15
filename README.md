@@ -402,6 +402,14 @@ u zpráv: napřed sežeň text, pak z něj piš. Díl o dinosaurech poskládaný
 modelu zní stejně sebejistě, ať jsou fakta správně, nebo ne, a ověřit to nejde.
 Zdroje si agent hledá sám, ve třech krocích:
 
+0. **odborné studie.** K tématu se stáhnou abstrakty z **Europe PMC** a
+   **Crossref** — oboje veřejné, bez klíče. Tohle je to, co odliší díl od
+   převyprávěné encyklopedie: Wikipedie shrnuje, co se ustálilo, kdežto spory,
+   čerstvé nálezy a hypotézy, které zrovna někdo zkoumá, jsou ve studiích.
+   Abstrakty jsou anglicky, což nevadí — čte je model, který z nich píše česky —
+   a veze se s nimi časopis a rok, ať jde v dílu říct „studie z Nature z roku
+   dva tisíce dvacet čtyři“ místo anonymního „vědci zjistili“. Vypne se
+   nastavením *Odborných studií* na nulu.
 1. **rozmyslí si, na co se ptát.** Z tématu („Jak funguje kvantový počítač“)
    nechá model udělat pár konkrétních dotazů a názvů hesel. Doslovná otázka je
    pro vyhledávání mizerný vstup, pojmy z ní dobrý — na téhle jedné větě záleží

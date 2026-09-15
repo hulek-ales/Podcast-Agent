@@ -44,7 +44,7 @@ def test_wikipedia_pages_become_sources():
                                      "extract": "Před 66 miliony let. " * 200}]}}
 
     topicmod._api = fake_api
-    arts = topicmod.gather("Vyhynutí dinosaurů", langs=("cs",))
+    arts = topicmod.gather("Vyhynutí dinosaurů", langs=("cs",), papers=0)
     assert len(arts) == 1
     art = arts[0]
     assert art["source"] == "Wikipedie"
@@ -63,7 +63,7 @@ def test_short_pages_are_skipped():
     topicmod._api = lambda lang, params, **kw: (
         {"query": {"search": [{"title": "Rozcestník"}]}} if params.get("list") == "search"
         else {"query": {"pages": [{"title": "Rozcestník", "extract": "Krátký rozcestník."}]}})
-    assert topicmod.gather("cokoliv", langs=("cs",)) == []
+    assert topicmod.gather("cokoliv", langs=("cs",), papers=0) == []
 
 
 def test_chapters_do_not_cluster_by_similarity():
@@ -149,7 +149,7 @@ def test_broken_plan_falls_back_to_the_topic_itself():
     from podcast import topic as topicmod
 
     assert topicmod.queries(PlanOpx("tohle není JSON"), cfg_with(), "Dinosauři") == {
-        "wiki": ["Dinosauři"], "web": ["Dinosauři"]}
+        "wiki": ["Dinosauři"], "web": ["Dinosauři"], "research": ["Dinosauři"]}
     assert topicmod.queries(None, cfg_with(), "Dinosauři")["wiki"] == ["Dinosauři"]
 
 
@@ -164,7 +164,7 @@ def test_web_search_is_skipped_without_an_engine(monkeypatch):
     monkeypatch.setattr(topicmod, "web_search",
                         lambda *a, **kw: called.append(a) or [])
 
-    arts = topicmod.gather("Dinosauři", langs=("cs",))
+    arts = topicmod.gather("Dinosauři", langs=("cs",), papers=0)
     assert called == [] and len(arts) == 1
 
 
@@ -184,7 +184,8 @@ def test_web_hits_are_fetched_and_joined(monkeypatch):
 
     monkeypatch.setattr(collect, "fetch_fulltext", fake_fulltext)
 
-    arts = topicmod.gather("Dinosauři", langs=("cs",), search_url="http://searxng:8080")
+    arts = topicmod.gather("Dinosauři", langs=("cs",), search_url="http://searxng:8080",
+                               papers=0)
     sources = {a["source"] for a in arts}
     assert sources == {"Wikipedie", "priroda.cz"}
     assert all(a["text"] for a in arts)
@@ -262,3 +263,53 @@ def test_results_survive_a_dead_engine(monkeypatch):
     hits = topicmod.web_search("http://searxng:8080", "x", notes=notes)
     assert [h["link"] for h in hits] == ["https://a.cz/x"]
     assert notes                                   # ale poznamená, že něco mlčelo
+
+
+def test_papers_become_one_source_not_five_chapters(monkeypatch):
+    """Z každého abstraktu zvlášť by byla kapitola; studie patří do jednoho podkladu."""
+    from podcast import research, topic as topicmod
+
+    monkeypatch.setattr(topicmod, "_api", lambda lang, params, **kw: (
+        {"query": {"search": [{"title": "Dinosauři"}]}} if params.get("list") == "search"
+        else {"query": {"pages": [{"title": "Dinosauři", "extract": "Fakta. " * 400}]}}))
+    monkeypatch.setattr(research, "papers", lambda queries, limit=4: [
+        {"title": "Fungal disease in dinosaurs", "journal": "Nature", "year": "2026",
+         "abstract": "A" * 600, "link": "https://doi.org/10.1/x"},
+        {"title": "K-Pg boundary revisited", "journal": "Science", "year": "2024",
+         "abstract": "B" * 600, "link": "https://doi.org/10.1/y"}])
+
+    arts = topicmod.gather("Dinosauři", langs=("cs",), papers=4)
+    studie = [a for a in arts if a["source"] == "odborné studie"]
+    assert len(studie) == 1
+    text = studie[0]["text"]
+    assert "Fungal disease in dinosaurs (Nature, 2026)" in text     # časopis a rok s sebou
+    assert "K-Pg boundary revisited (Science, 2024)" in text
+    assert studie[0]["weight"] > 1.0                                # váží víc než heslo
+
+
+def test_papers_can_be_turned_off(monkeypatch):
+    from podcast import research, topic as topicmod
+
+    monkeypatch.setattr(topicmod, "_api", lambda lang, params, **kw: (
+        {"query": {"search": [{"title": "X"}]}} if params.get("list") == "search"
+        else {"query": {"pages": [{"title": "X", "extract": "Fakta. " * 400}]}}))
+    called = []
+    monkeypatch.setattr(research, "papers", lambda *a, **kw: called.append(1) or [])
+    topicmod.gather("X", langs=("cs",), papers=0)
+    assert called == []
+
+
+def test_crossref_abstracts_lose_their_xml():
+    from podcast import research
+    raw = "<jats:p>Impact <jats:italic>winter</jats:italic> lasted years.</jats:p>"
+    assert research.clean(raw) == "Impact winter lasted years."
+
+
+def test_research_queries_are_english_and_specific():
+    from podcast import topic as topicmod
+
+    opx = PlanOpx('{"wiki": ["Vymírání na konci křídy"], "web": ["dinosauři vyhynutí"], '
+                  '"research": ["Chicxulub impact winter", "K-Pg extinction selectivity"]}')
+    plan = topicmod.queries(opx, cfg_with(), "Vyhynutí dinosaurů")
+    assert plan["research"] == ["Chicxulub impact winter", "K-Pg extinction selectivity"]
+    assert "ANGLICKY" in opx.asked[0]

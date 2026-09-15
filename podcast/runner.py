@@ -117,7 +117,8 @@ def _produce(show: dict, day: datetime, steps, resume: bool) -> dict:
                        + ("zapnutý" if (cfg.path("search.url") or "").strip() else "vypnutý"))
             articles = topicmod.gather(subject, show.get("links"), opx=opx, cfg=cfg,
                                        search_url=(cfg.path("search.url") or "").strip(),
-                                       per_query=int(cfg.path("search.results", 3)))
+                                       per_query=int(cfg.path("search.results", 3)),
+                                       papers=int(cfg.path("search.papers", 4)))
             if not articles:
                 return _done(slug, False, "k tématu „" + subject + "“ se nenašly žádné podklady "
                              "— zkus téma napsat jinak, nebo přidej vlastní odkazy")
